@@ -39,6 +39,7 @@ class FlowModel(nn.Module):
                 self.seq.append(nn.ReLU())
 
     def forward(self, x, t):
+        #print(x.size())
         batch_size = x.size()[0]
         #reshaped_x = x.reshape(batch_size, self.img_size * self.img_size *3)
         #print(reshaped_x.size())
@@ -46,7 +47,7 @@ class FlowModel(nn.Module):
         combined = torch.cat([x, t.reshape(batch_size, 1)], dim=1)
         #print(combined.size())
         output = self.seq(combined)
-        return output.reshape(batch_size, 3, self.img_size, self.img_size)
+        return output
 
 # Represents the external parts of the diffusion model
 

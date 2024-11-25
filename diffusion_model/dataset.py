@@ -41,7 +41,7 @@ class ToyDataset(Dataset):
 
     def __getitem__(self, idx):
         # Return the data point and its corresponding parameter t value
-        return torch.tensor(self.X[idx], dtype=torch.float32), torch.tensor(self.t[idx], dtype=torch.float32)
+        return torch.tensor(self.X[idx], dtype=torch.float32)#, torch.tensor(self.t[idx], dtype=torch.float32)
 
 # DataModule to handle data loading
 class ToyDataModule(pl.LightningDataModule):
