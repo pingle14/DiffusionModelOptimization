@@ -8,7 +8,7 @@ from torchmetrics import MeanMetric
 from torch.amp import autocast, GradScaler
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pretrained import PretrainedConvModel
+#rom pretrained import PretrainedConvModel
 #from lightning_3 import DiffusionModel
 from model import DiffusionModel
 
@@ -27,7 +27,7 @@ def noising_timestep_order(timesteps):
     return timesteps
 
 # Euler sampling function
-def euler_sampler(model, num_samples=4, time_steps=[]):
+def euler_sampler(model, num_samples=4, time_steps=[], device=device):
     xt = torch.randn(num_samples, 3, 96, 96, device=device)
     xtraj = [xt.clone()]
 

@@ -14,21 +14,46 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import matplotlib.pyplot as plt
 from collections import namedtuple
 from dataset import ToyDataset, ToyDataModule
-from sampler import euler_sampler
+#from sampler import euler_sampler
 
 # Create Diffusion Model, with training and inference functions
 # Inference function should take as input, an array of timesteps
 
+data_dimensions = 2
+
 # Specifically the neural net that will be the ODE
-class FlowModel:
-    ...
+class FlowModel(nn.Module):
+    def __init__(self, layers, data_dimensions):
+        super(FlowModel, self).__init__()
+        self.data_dimensions = data_dimensions
+        in_size = data_dimensions + 1
+        #layers = [(in_size-1) // 8, (in_size-1) // 8]
+        #[in_size, 4096, 2048, 1024, 512, 1024, 2048, 4096, in_size - 1]
+        layers = [in_size] + layers + [in_size-1]
+        self.seq = nn.Sequential()
+        for i in range(len(layers)-1):
+            self.seq.append(nn.Linear(layers[i],layers[i+1]))
+            if i == len(layers) - 2:
+                self.seq.append(nn.Sigmoid())
+            else:
+                self.seq.append(nn.ReLU())
+
+    def forward(self, x, t):
+        batch_size = x.size()[0]
+        #reshaped_x = x.reshape(batch_size, self.img_size * self.img_size *3)
+        #print(reshaped_x.size())
+        #print(t.size())
+        combined = torch.cat([x, t.reshape(batch_size, 1)], dim=1)
+        #print(combined.size())
+        output = self.seq(combined)
+        return output.reshape(batch_size, 3, self.img_size, self.img_size)
 
 # Represents the external parts of the diffusion model
 
 class DiffusionModel(pl.LightningModule):
     def __init__(self, model_size='small', learning_rate=1e-2, num_noise_samples=1, loss_type='mse', print_debug=False):
         super(DiffusionModel, self).__init__()
-        self.model = FlowModel(print_debug=print_debug)
+        self.model = FlowModel(layers=[1024, 1024], data_dimensions=data_dimensions)
         self.learning_rate = learning_rate
         self.num_noise_samples = num_noise_samples
         self.loss_type = loss_type
@@ -70,10 +95,6 @@ class DiffusionModel(pl.LightningModule):
         optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
         return optimizer
 
-def loss_function():
-    ...
-
-
 
 # Main training script
 if __name__ == '__main__':
@@ -91,15 +112,15 @@ if __name__ == '__main__':
 
     # Instantiate the model, data module, and trainer
     model = DiffusionModel(model_size=config['model_size'], learning_rate=config['learning_rate'], loss_type=config['loss_type'], print_debug=config['print_debug'])
-    data_module = ToyDataModule(csv_file=config['csv_file'], batch_size=config['batch_size'])
+    data_module = ToyDataModule(csv_file=config['csv_file'], batch_size=config['batch_size'], dimension=data_dimensions)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath='/scratch/aadarshnarayan/models/',  # Directory to save the models
-        filename='pokemon_model-{epoch:02d}',  # Filename format
+        dirpath='../model_files/', #'/scratch/aadarshnarayan/models/',  # Directory to save the models
+        filename='toy_model-{epoch:02d}',  # Filename format
         save_top_k=-1,  # Save all checkpoints
         every_n_epochs=500  # Save every 5 epochs
     )
-    euler_callback = EulerSamplerCallback(save_dir='generated_images/', every_n_epochs=100)
+    #euler_callback = EulerSamplerCallback(save_dir='generated_images/', every_n_epochs=100)
 
     # Define the trainer
     trainer = pl.Trainer(
@@ -108,7 +129,7 @@ if __name__ == '__main__':
         devices=config['num_gpus'],
         precision='16-mixed',  # Updated precision
         log_every_n_steps=1,
-        callbacks=[checkpoint_callback, euler_callback]
+        callbacks=[checkpoint_callback]#, euler_callback]
     )
 
     # Start training

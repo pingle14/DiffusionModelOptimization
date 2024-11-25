@@ -3,6 +3,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
 import pandas as pd
+import pytorch_lightning as pl
 
 class ToyDataset(Dataset):
     def __init__(self, n_samples=1000, noise=0.1, dimension=2, max_t=4*np.pi):
@@ -44,16 +45,18 @@ class ToyDataset(Dataset):
 
 # DataModule to handle data loading
 class ToyDataModule(pl.LightningDataModule):
-    def __init__(self, csv_file, batch_size=128, noise=0.5):
+    def __init__(self, csv_file, batch_size=128, n_samples=10000, noise=0.1, dimension=2):
         super().__init__()
         ### TODO: sample datapoints from the toy function, either pre-computed, or create them here
-        self.csv_file = csv_file
+        #self.csv_file = csv_file
         self.batch_size = batch_size
+        self.n_samples = n_samples
         self.noise = noise
+        self.dimension = dimension
 
     def setup(self, stage=None):
-        df = pd.read_csv(self.csv_file)
-        self.dataset = ToyDataset(df, noise=self.noise, transform=self.transform)
+        #df = pd.read_csv(self.csv_file)
+        self.dataset = ToyDataset(n_samples=self.n_samples, noise=self.noise, dimension=self.dimension)
 
     def train_dataloader(self):
         return DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True, num_workers=4, pin_memory=True)
