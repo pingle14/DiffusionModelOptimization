@@ -8,8 +8,9 @@ from torchmetrics import MeanMetric
 from torch.amp import autocast, GradScaler
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-#rom pretrained import PretrainedConvModel
-#from lightning_3 import DiffusionModel
+
+# rom pretrained import PretrainedConvModel
+# from lightning_3 import DiffusionModel
 from model import DiffusionModel
 
 # # Load the model
@@ -20,15 +21,18 @@ from model import DiffusionModel
 # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # model.to(device)
 
+
 def generative_denoising_timestep_order(timesteps):
     return reversed(timesteps)
+
 
 def noising_timestep_order(timesteps):
     return timesteps
 
+
 # Euler sampling function
-def euler_sampler(model, num_samples=4, time_steps=[], device=device):
-    xt = torch.randn(num_samples, 3, 96, 96, device=device)
+def euler_sampler(model, xt, time_steps=[], device=device):
+    # xt = torch.randn(num_samples, 3, 96, 96, device=device)
     xtraj = [xt.clone()]
 
     time_steps = generative_denoising_timestep_order(time_steps)
@@ -40,7 +44,9 @@ def euler_sampler(model, num_samples=4, time_steps=[], device=device):
                 break
             # TODO: note that will need to fiddle with dimensions of this tensor
             t = torch.full((xt.shape[0], 1, 1, 1), fill_value=step, device=device)
-            denominator = (time_steps[i+1] if i < len(time_steps) - 1 else 1) - time_steps[i]
+            denominator = (
+                time_steps[i + 1] if i < len(time_steps) - 1 else 1
+            ) - time_steps[i]
             step_size = 1.0 / denominator
 
             v_t = model(xt, t)
@@ -51,6 +57,7 @@ def euler_sampler(model, num_samples=4, time_steps=[], device=device):
             xtraj.append(xt.clone())
 
     return xt
+
 
 # # Generate images
 # num_samples = 4  # Adjust as needed

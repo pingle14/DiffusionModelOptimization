@@ -48,13 +48,12 @@ class GaussianNoiseNN(nn.Module):
 
 # Custom loss function
 class TimestepLoss(nn.Module):
-    def __init__(self, alpha=1.0, beta=1.0, device="cuda"):
+    def __init__(self, alpha=1.0, beta=1.0):
         super(TimestepLoss, self).__init__()
         self.alpha = alpha  # Controls the importance of the distinctness penalty
         self.beta = beta  # Controls importance of actual objective function
-        self.device = device
 
-    def forward(self, output_timesteps, target_generation):
+    def forward(self, output_timesteps, output_generation, target_generation):
         # Loss 1: Penalize outputs that are outside the [0, 1] range (just as a safety check)
         range_loss = torch.sum(
             torch.clamp(output_timesteps, min=0.0, max=1.0) - output_timesteps
@@ -70,10 +69,7 @@ class TimestepLoss(nn.Module):
         )  # Penalize small differences
 
         # Loss 3: Actual Objective Function
-        our_generation = euler_sampler(
-            model, num_samples=4, time_steps=[], device=self.device
-        )
-        adjusted_mse = F.mse_loss(our_generation, target_generation)
+        adjusted_mse = F.mse_loss(output_generation, target_generation)
 
         # Final custom loss: combine all components with respective weights
         loss = self.alpha * distinctness_loss + self.beta * adjusted_mse + range_loss
@@ -90,6 +86,7 @@ hidden_size = 64
 output_nTimesteps = 5  # Output per timestep
 learning_rate = 0.001
 epochs = 1000
+device = "cpu"
 
 # Initialize the neural network
 model = GaussianNoiseNN(input_size, output_nTimesteps)
@@ -110,9 +107,12 @@ for epoch in range(epochs):
 
     # Forward pass
     output_timesteps = model(noise)
+    output_generation = euler_sampler(
+        model, xt=noise, time_steps=output_timesteps, device=device
+    )
 
     # Compute the loss
-    loss = criterion(output_timesteps, target_generations)
+    loss = criterion(output_timesteps, output_generation, target_generations)
 
     # Backward pass and optimization
     optimizer.zero_grad()
