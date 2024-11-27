@@ -33,7 +33,7 @@ def noising_timestep_order(timesteps):
 
 
 # Euler sampling function
-def euler_sampler(model, xt, num_samples=4, time_steps=[], device=device):
+def euler_sampler(model, xt, time_steps=[], device=device):
     xtraj = [xt.clone()]
 
     #time_steps = generative_denoising_timestep_order(time_steps)
@@ -64,7 +64,7 @@ num_steps = 1000
 
 xt = torch.randn((num_samples, 2), device=device)
 original_noise = xt.clone().detach()
-generated_datapoints, traj = euler_sampler(model, xt, num_samples=num_samples, time_steps=np.arange(1, step=1.0/num_steps)) #num_steps=num_steps)
+generated_datapoints, traj = euler_sampler(model, xt, time_steps=np.arange(1, step=1.0/num_steps)) #num_steps=num_steps)
 
 data = generated_datapoints.detach().cpu().numpy()
 df = pd.DataFrame(data)
