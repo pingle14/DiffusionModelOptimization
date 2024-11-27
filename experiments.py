@@ -83,6 +83,9 @@ class TimestepLoss(nn.Module):
         )  # Penalize small differences
 
         # Loss 3: Actual Objective Function
+        #print(output_generation.shape)
+        #print(target_generation.shape)
+    
         adjusted_mse = F.mse_loss(output_generation, target_generation)
 
         # Final custom loss: combine all components with respective weights
@@ -176,6 +179,8 @@ class TimseStepSelectorModule(pl.LightningModule):
         self.test_loss = MeanMetric()
         self.scaler = GradScaler()
         self.diffusion_model = diffusion_model
+        for param in self.diffusion_model.parameters():
+            param.requires_grad = False
 
     def forward(self, x, t):
         return self.model(x, t)
@@ -228,7 +233,7 @@ class TimseStepSelectorModule(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9999)
+        scheduler = optim.lr_scheduler.PolynomialLR(optimizer, total_iters=)
         return {
             "optimizer": optimizer,
             "lr_scheduler": scheduler

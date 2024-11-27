@@ -39,15 +39,19 @@ def euler_sampler(model, xt, time_steps=[], device='cuda'):
     # time_steps = generative_denoising_timestep_order(time_steps)
 
     with torch.no_grad():
-        for i, step in enumerate(time_steps):
+        num_time_steps = time_steps.shape[1]
+        for i in range(num_time_steps):
             # Time variable t decreases from 1 to 0
             # TODO: note that will need to fiddle with dimensions of this tensor
             # TODO: fix step/ t stufffff
-            t = step #TODO: Handle non-tensor case with : torch.full((xt.shape[0], 1), fill_value=step, device=device)
-            all_ones = torch.ones_like(time_steps[i], device=device)
+            step_t = time_steps[:, i].unsqueeze(-1)
+ 
+            t = step_t
+            #print(t.shape) #TODO: Handle non-tensor case with : torch.full((xt.shape[0], 1), fill_value=step, device=device)
+            all_ones = torch.ones_like(step_t, device=device)
             denominator = (
-                time_steps[i + 1] if i < len(time_steps) - 1 else all_ones
-            ) - time_steps[i]
+                time_steps[:, i+1].unsqueeze(-1) if i < num_time_steps - 1 else all_ones
+            ) - step_t
             # print(denominator)
             step_size = denominator
 
@@ -57,7 +61,7 @@ def euler_sampler(model, xt, time_steps=[], device='cuda'):
 
             xtraj.append(xt.clone().detach())
 
-    return xt, xtraj
+    return xt#, xtraj
 
 
 # # # Generate images
