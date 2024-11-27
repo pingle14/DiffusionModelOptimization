@@ -31,6 +31,7 @@ def noising_timestep_order(timesteps):
 # Euler sampling function
 def euler_sampler(model, num_samples=4, time_steps=[], device=device):
     xt = torch.randn((num_samples, 2), device=device)
+    original_noise = xt.clone().detach()
     #print(xt)
     xtraj = [xt.clone()]
 
@@ -58,15 +59,17 @@ def euler_sampler(model, num_samples=4, time_steps=[], device=device):
 
             xtraj.append(xt.clone().detach())
 
-    return xt, xtraj
+    return xt, xtraj, original_noise
 
 # # Generate images
 num_samples = 10000  # Adjust as needed
 num_steps = 1000
-generated_datapoints, traj = euler_sampler(model, num_samples=num_samples, time_steps=np.arange(1, step=1.0/num_steps)) #num_steps=num_steps)
+generated_datapoints, traj, original_noise = euler_sampler(model, num_samples=num_samples, time_steps=np.arange(1, step=1.0/num_steps)) #num_steps=num_steps)
 
 data = generated_datapoints.detach().cpu().numpy()
 df = pd.DataFrame(data)
+noise = pd.DataFrame(original_noise.cpu().numpy())
+df = pd.concat([df, noise], axis=1)
 df.to_csv("data.csv")
 print(data.shape)
 
