@@ -233,7 +233,7 @@ class TimseStepSelectorModule(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-        scheduler = optim.lr_scheduler.PolynomialLR(optimizer, total_iters=)
+        scheduler = optim.lr_scheduler.PolynomialLR(optimizer, total_iters=10000, power=2)
         return {
             "optimizer": optimizer,
             "lr_scheduler": scheduler

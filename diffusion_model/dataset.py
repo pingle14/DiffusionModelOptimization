@@ -21,25 +21,34 @@ class ToyDataset(Dataset):
         self.dimension = dimension
         self.max_t = max_t
 
-        # Generate the data
+        # Generate the parameter t and the radial distance (r)
         self.t = np.linspace(0, self.max_t, self.n_samples)
-        self.r = self.t + self.noise * np.random.randn(
-            self.n_samples
-        )  # Adding noise to the radius
+        # Adding noise to the radius
+        self.r = self.t + self.noise * np.random.randn(self.n_samples)
 
-        # Generate spiral data in the specified number of dimensions
-        self.X = self.generate_spiral_data(self.t, self.r, self.dimension) / 10
-        plt.scatter(self.X[:, 0], self.X[:, 1])
-        plt.savefig("input_data.png")
+        # Generate the spiral data
+        self.X = self.generate_spiral_data()
 
-    def generate_spiral_data(self, t, r, dimension):
+        # If the data is 2D, plot it
+        if self.dimension == 2:
+            plt.scatter(self.X[:, 0], self.X[:, 1])
+            plt.savefig("plots/input_data.png")
+
+    def generate_spiral_data(self):
         """
         Generate spiral data for the given number of dimensions.
         """
-        data = np.zeros((self.n_samples, dimension))
-        for i in range(dimension):
-            # Use sine and cosine functions for the first two dimensions, then rotate for higher dims
-            data[:, i] = r * np.cos((i + 1) * t)  # Shift frequency for each dimension
+        data = np.zeros((self.n_samples, self.dimension))
+
+        # Generate the 2D spiral using cos and sin for the first two dimensions
+        data[:, 0] = self.r * np.cos(self.t)  # X-coordinate
+        data[:, 1] = self.r * np.sin(self.t)  # Y-coordinate
+
+        if self.dimension > 2:
+            # For higher dimensions, we rotate the spiral into the additional dimensions
+            # Use different frequencies for each additional dimension
+            for i in range(2, self.dimension):
+                data[:, i] = self.r * np.cos((i - 1) * self.t)
         return data
 
     def __len__(self):
@@ -97,6 +106,6 @@ def save_dataset_to_csv(dataset, filename="spiral_data.csv"):
             writer.writerow(list(data_point) + [t_value])
 
 
-def generate_saved_data(n_samples=10, dims=2, path=f"../data/"):
+def generate_saved_data(n_samples=10, dims=2, path=f"data/"):
     dataset = ToyDataset(n_samples=n_samples, noise=0.5, dimension=dims)
     save_dataset_to_csv(dataset, f"{path}spiral_n{n_samples}_d{dims}.csv")
