@@ -8,8 +8,9 @@ from torchmetrics import MeanMetric
 from torch.amp import autocast, GradScaler
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-#rom pretrained import PretrainedConvModel
-#from lightning_3 import DiffusionModel
+
+# rom pretrained import PretrainedConvModel
+# from lightning_3 import DiffusionModel
 from model import DiffusionModel
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -22,17 +23,17 @@ model.eval()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 
+
 def generative_denoising_timestep_order(timesteps):
     return reversed(timesteps)
+
 
 def noising_timestep_order(timesteps):
     return timesteps
 
+
 # Euler sampling function
-def euler_sampler(model, num_samples=4, time_steps=[], device=device):
-    xt = torch.randn((num_samples, 2), device=device)
-    original_noise = xt.clone().detach()
-    #print(xt)
+def euler_sampler(model, xt, num_samples=4, time_steps=[], device=device):
     xtraj = [xt.clone()]
 
     #time_steps = generative_denoising_timestep_order(time_steps)
@@ -49,22 +50,21 @@ def euler_sampler(model, num_samples=4, time_steps=[], device=device):
             step_size = denominator
 
             v_t = model(xt, t)
-            #if i == 0:
-                #print(v_t)
-                #print(xt)
             # Update xt using Euler method
             xt = xt + step_size * v_t
-            #if i== 0:
-            #    print(xt)
 
             xtraj.append(xt.clone().detach())
 
-    return xt, xtraj, original_noise
+    return xt, xtraj
+
 
 # # Generate images
 num_samples = 10000  # Adjust as needed
 num_steps = 1000
-generated_datapoints, traj, original_noise = euler_sampler(model, num_samples=num_samples, time_steps=np.arange(1, step=1.0/num_steps)) #num_steps=num_steps)
+
+xt = torch.randn((num_samples, 2), device=device)
+original_noise = xt.clone().detach()
+generated_datapoints, traj = euler_sampler(model, xt, num_samples=num_samples, time_steps=np.arange(1, step=1.0/num_steps)) #num_steps=num_steps)
 
 data = generated_datapoints.detach().cpu().numpy()
 df = pd.DataFrame(data)
