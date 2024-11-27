@@ -331,7 +331,7 @@ def visualize_model(data_module, time_model_path):
 
     # Initialize the PyTorch Lightning Trainer
     trainer = pl.Trainer(
-        gpus=1 if torch.cuda.is_available() else 0,  # Use GPU if available
+        gpus=8 if torch.cuda.is_available() else 0,  # Use GPU if available
         precision=16,  # Mixed precision for faster inference (optional)
         checkpoint_callback=False,  # Disable checkpoint saving during testing
     )
