@@ -13,7 +13,7 @@ from torch.amp import autocast, GradScaler
 from pytorch_lightning.callbacks import ModelCheckpoint
 import matplotlib.pyplot as plt
 from collections import namedtuple
-from dataset import ToyDataset, ToyDataModule
+from diffusion_model.dataset import ToyDataset, ToyDataModule
 #from sampler import euler_sampler
 
 # Create Diffusion Model, with training and inference functions
