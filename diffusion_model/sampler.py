@@ -16,11 +16,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 # # Load the model
-checkpoint_path = '../model_files4/toy_model-epoch=1999.ckpt' #'/scratch/aadarshnarayan/models/pokemon_model-epoch=499.ckpt'
+checkpoint_path = "../model_files4/toy_model-epoch=1999.ckpt"  #'/scratch/aadarshnarayan/models/pokemon_model-epoch=499.ckpt'
 # #'models/pokemon_model-epoch=9999.ckpt'  # Update with your actual checkpoint path
 model = DiffusionModel.load_from_checkpoint(checkpoint_path)
 model.eval()
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
 
@@ -33,10 +33,10 @@ def noising_timestep_order(timesteps):
 
 
 # Euler sampling function
-def euler_sampler(model, xt, num_samples=4, time_steps=[], device=device):
+def euler_sampler(model, xt, time_steps=[], device=device):
     xtraj = [xt.clone()]
 
-    #time_steps = generative_denoising_timestep_order(time_steps)
+    # time_steps = generative_denoising_timestep_order(time_steps)
 
     with torch.no_grad():
         for i, step in enumerate(time_steps):
@@ -45,8 +45,10 @@ def euler_sampler(model, xt, num_samples=4, time_steps=[], device=device):
                 break
             # TODO: note that will need to fiddle with dimensions of this tensor
             t = torch.full((xt.shape[0], 1), fill_value=step, device=device)
-            denominator = (time_steps[i+1] if i < len(time_steps) - 1 else 1) - time_steps[i]
-            #print(denominator)
+            denominator = (
+                time_steps[i + 1] if i < len(time_steps) - 1 else 1
+            ) - time_steps[i]
+            # print(denominator)
             step_size = denominator
 
             v_t = model(xt, t)
@@ -64,7 +66,9 @@ num_steps = 1000
 
 xt = torch.randn((num_samples, 2), device=device)
 original_noise = xt.clone().detach()
-generated_datapoints, traj = euler_sampler(model, xt, num_samples=num_samples, time_steps=np.arange(1, step=1.0/num_steps)) #num_steps=num_steps)
+generated_datapoints, traj = euler_sampler(
+    model, xt, time_steps=np.arange(1, step=1.0 / num_steps)
+)  # num_steps=num_steps)
 
 data = generated_datapoints.detach().cpu().numpy()
 df = pd.DataFrame(data)
@@ -78,7 +82,7 @@ plt.savefig(f"fig.png")
 
 for i in range(10):
     plt.close()
-    data = traj[(num_steps//10)*i].detach().cpu().numpy()
+    data = traj[(num_steps // 10) * i].detach().cpu().numpy()
     plt.scatter(data[:, 0], data[:, 1])
     plt.savefig(f"figs/fig_{i}.png")
 
