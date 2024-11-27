@@ -33,9 +33,10 @@ class FlowModel(nn.Module):
         self.seq = nn.Sequential()
         for i in range(len(layers)-1):
             self.seq.append(nn.Linear(layers[i],layers[i+1]))
-            if i == len(layers) - 2:
-                self.seq.append(nn.Sigmoid())
-            else:
+            #if i == len(layers) - 2:
+            #    self.seq.append(nn.Sigmoid())
+            #else:
+            if i < len(layers) - 2:
                 self.seq.append(nn.ReLU())
 
     def forward(self, x, t):
@@ -44,7 +45,7 @@ class FlowModel(nn.Module):
         #reshaped_x = x.reshape(batch_size, self.img_size * self.img_size *3)
         #print(reshaped_x.size())
         #print(t.size())
-        combined = torch.cat([x, t.reshape(batch_size, 1)], dim=1)
+        combined = torch.cat([x, t], dim=1)
         #print(combined.size())
         output = self.seq(combined)
         return output
@@ -52,9 +53,10 @@ class FlowModel(nn.Module):
 # Represents the external parts of the diffusion model
 
 class DiffusionModel(pl.LightningModule):
-    def __init__(self, model_size='small', learning_rate=1e-2, num_noise_samples=1, loss_type='mse', print_debug=False):
+    def __init__(self, model_size='small', learning_rate=1e-4, num_noise_samples=1, loss_type='mse', layers=[1024, 1024, 1024], print_debug=False):
         super(DiffusionModel, self).__init__()
-        self.model = FlowModel(layers=[1024, 1024], data_dimensions=data_dimensions)
+        self.layers = layers
+        self.model = FlowModel(layers=layers, data_dimensions=data_dimensions)
         self.learning_rate = learning_rate
         self.num_noise_samples = num_noise_samples
         self.loss_type = loss_type
@@ -66,14 +68,15 @@ class DiffusionModel(pl.LightningModule):
             raise ValueError("Invalid loss_type. Choose 'mse' or 'kl'.")
         self.scaler = GradScaler()
         self.train_loss = MeanMetric()
+        #self.noise = torch.randn(batch.size(), device=self.device)
 
     def forward(self, x, t):
         return self.model(x, t)
 
     def training_step(self, batch, batch_idx):
         batch_size = batch.size(0)
-        batch = batch.repeat_interleave(self.num_noise_samples, dim=0)
-        noise = torch.randn_like(batch, device=self.device)
+        #batch = batch.repeat_interleave(self.num_noise_samples, dim=0)
+        noise = torch.randn(batch.size(), device=self.device)
         t_shape = [batch.size(0)] + [1] * (batch.dim() - 1)
         t = torch.rand(t_shape, device=self.device)
         Xt = t * batch + (1 - t) * noise
@@ -93,8 +96,12 @@ class DiffusionModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
-        return optimizer
+        optimizer = optim.AdamW(self.model.parameters(), lr=self.learning_rate)#, weight_decay=1e-5)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9999)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler
+        }
 
 
 # Main training script
@@ -102,21 +109,24 @@ if __name__ == '__main__':
     # Configuration
     config = {
         'model_size': 'large',
-        'batch_size': 32,
-        'learning_rate': 1e-2,
-        'num_epochs': 500,
+        'batch_size': 10000,
+        'learning_rate': 1e-4,
+        'num_epochs': 5000,
         'csv_file': 'pokemon_static_image_dataset_2.csv',
         'num_gpus': 8,
         'loss_type': 'mse',  # Options: 'mse' or 'kl'
         'print_debug': True,  # Toggle for printing debug information
+        'layers': [1024, 1024, 1024],
     }
 
     # Instantiate the model, data module, and trainer
-    model = DiffusionModel(model_size=config['model_size'], learning_rate=config['learning_rate'], loss_type=config['loss_type'], print_debug=config['print_debug'])
-    data_module = ToyDataModule(csv_file=config['csv_file'], batch_size=config['batch_size'], dimension=data_dimensions)
+    checkpoint_path = '../model_files3/toy_model-epoch=4999.ckpt'
+    model = DiffusionModel.load_from_checkpoint(checkpoint_path)
+    #DiffusionModel(model_size=config['model_size'], layers=config['layers'], learning_rate=config['learning_rate'], loss_type=config['loss_type'], print_debug=config['print_debug'])
+    data_module = ToyDataModule(csv_file=config['csv_file'], batch_size=config['batch_size'], dimension=data_dimensions, n_samples=80000)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath='../model_files/', #'/scratch/aadarshnarayan/models/',  # Directory to save the models
+        dirpath='../model_files4/', #'/scratch/aadarshnarayan/models/',  # Directory to save the models
         filename='toy_model-{epoch:02d}',  # Filename format
         save_top_k=-1,  # Save all checkpoints
         every_n_epochs=500  # Save every 5 epochs

@@ -24,7 +24,9 @@ class ToyDataset(Dataset):
         self.r = self.t + self.noise * np.random.randn(self.n_samples)  # Adding noise to the radius
         
         # Generate spiral data in the specified number of dimensions
-        self.X = self.generate_spiral_data(self.t, self.r, self.dimension)
+        self.X = self.generate_spiral_data(self.t, self.r, self.dimension) / 10
+        plt.scatter(self.X[:, 0], self.X[:, 1])
+        plt.savefig("input_data.png")
 
     def generate_spiral_data(self, t, r, dimension):
         """
