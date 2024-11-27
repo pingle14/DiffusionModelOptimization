@@ -247,7 +247,42 @@ class TimseStepSelectorModule(pl.LightningModule):
         # Log the loss
         self.test_loss.update(loss)
         self.log("test_loss", self.test_loss, prog_bar=True)
+        # Collect the data from the current batch
+        batch_size = input_noise.size(0)
+
+        for i in range(batch_size):
+            # Flattening each of the tensors to single lists of values
+            # Input tensor as numpy
+            input_data = input_noise[i].cpu().numpy()
+            # Predicted tensor as numpy
+            predicted_data = output_generations[i].cpu().numpy()
+            # Target tensor as numpy
+            target_data = target_generations[i].cpu().numpy()
+
+            # Add each example's data to the results list
+            self.inference_results.append(
+                {
+                    **{
+                        f"input_{j}": input_data[j] for j in range(len(input_data))
+                    },  # Each element in input_noise
+                    **{
+                        f"predicted_{j}": predicted_data[j]
+                        for j in range(len(predicted_data))
+                    },  # Each element in output_generations
+                    **{
+                        f"target_{j}": target_data[j] for j in range(len(target_data))
+                    },  # Each element in target_generations
+                }
+            )
+
         return loss
+
+    def on_test_end(self):
+        # After the test loop is done, save results to a CSV
+        print("Saving inference results to CSV...")
+        # Use pandas for easy saving to CSV
+        df = pd.DataFrame(self.inference_results)
+        df.to_csv("inference_results.csv", index=False)
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.model.parameters(), lr=self.learning_rate)
@@ -259,9 +294,8 @@ class TimseStepSelectorModule(pl.LightningModule):
 
 def train_time_model(
     diffusion_model_path,
-    csv_file,
     time_model_directory,
-    batch_size=10000,
+    data_module,
     num_epochs=5000,
     num_gpus=8,
 ):
@@ -269,7 +303,6 @@ def train_time_model(
     # Instantiate the model, data module, and trainer
     diffusion_model = DiffusionModel.load_from_checkpoint(diffusion_model_path)
     model = TimseStepSelectorModule(diffusion_model=diffusion_model)
-    data_module = CSVDataModule(csv_file=csv_file, batch_size=batch_size)
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=time_model_directory,  # Directory to save the models
@@ -290,6 +323,21 @@ def train_time_model(
 
     # Start training
     trainer.fit(model, datamodule=data_module)
+
+
+def visualize_model(data_module, time_model_path):
+    # TODO: Ok to load from this checkpoint? Will it know the Diffusion Model?
+    time_model = TimseStepSelectorModule.load_from_checkpoint(time_model_path)
+
+    # Initialize the PyTorch Lightning Trainer
+    trainer = pl.Trainer(
+        gpus=1 if torch.cuda.is_available() else 0,  # Use GPU if available
+        precision=16,  # Mixed precision for faster inference (optional)
+        checkpoint_callback=False,  # Disable checkpoint saving during testing
+    )
+
+    # Run the test phase
+    trainer.test(time_model, datamodule=data_module)
 
 
 # Main training script
@@ -325,14 +373,16 @@ if __name__ == "__main__":
     # Parse the arguments
     args = parser.parse_args()
 
+    # CSV: "diffusion_model/data.csv"
+    data_module = CSVDataModule(
+        csv_file=args["csvFile"], batch_size=10000, shuffle=False
+    )
     train_time_model(
         # "model_files6/toy_model-epoch=1999.ckpt"
         diffusion_model_path=args["diffusionModel"],
-        # "diffusion_model/data.csv"
-        csv_file=args["csvFile"],
         # "time_model_files/"
         time_model_directory=args["outputTimeModelDirPath"],
-        batch_size=10000,
+        data_module=data_module,
         num_epochs=5000,
         num_gpus=8,
     )
