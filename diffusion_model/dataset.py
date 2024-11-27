@@ -27,12 +27,12 @@ class ToyDataset(Dataset):
         self.r = self.t + self.noise * np.random.randn(self.n_samples)
 
         # Generate the spiral data
-        self.X = self.generate_spiral_data()
+        self.X = self.generate_spiral_data() / 10
 
         # If the data is 2D, plot it
         if self.dimension == 2:
             plt.scatter(self.X[:, 0], self.X[:, 1])
-            plt.savefig("plots/input_data.png")
+            plt.savefig("figs/input_data.png")
 
     def generate_spiral_data(self):
         """
