@@ -327,11 +327,11 @@ if __name__ == "__main__":
 
     train_time_model(
         # "model_files6/toy_model-epoch=1999.ckpt"
-        diffusion_model_path=args["diffusionModel"],
+        diffusion_model_path=args.diffusionModel,
         # "diffusion_model/data.csv"
-        csv_file=args["csvFile"],
+        csv_file=args.csvFile,
         # "time_model_files/"
-        time_model_directory=args["outputTimeModelDirPath"],
+        time_model_directory=args.outputTimeModelDirPath,
         batch_size=10000,
         num_epochs=5000,
         num_gpus=8,
