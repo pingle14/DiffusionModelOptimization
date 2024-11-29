@@ -24,7 +24,7 @@ import argparse
 # Define the Neural Network model
 # Input = Noise, Output = Timesteps (k)
 class GaussianNoiseNN(nn.Module):
-    def __init__(self, input_size=2, output_nTimesteps=100):
+    def __init__(self, input_size=2, output_nTimesteps=500):
         super(GaussianNoiseNN, self).__init__()
 
         # Define the layers of the network
@@ -35,17 +35,25 @@ class GaussianNoiseNN(nn.Module):
         # Activation functions
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()  # Sigmoid to constrain output between [0, 1]
+        self.softmax = nn.Softmax()
 
     def forward(self, x):
         x = self.relu(self.fc1(x))  # Pass input through the first hidden layer
         x = self.relu(self.fc2(x))  # Pass through the second hidden layer
         # Apply sigmoid to output to ensure it's between [0, 1]
-        x = self.sigmoid(self.fc3(x))
+        x = self.softmax(self.fc3(x)) # Replaced sigmoid with softmax in Approach 2
+
+        x = torch.cumsum(x, dim=1) # Prefix Sum to convert changes to timesteps
 
         # Post-processing to make sure outputs are distinct
-        x = self.make_distinct(x)
+        # Normalize
+        # x = self.normalize(x)
 
         return x
+
+    def normalize(self, x):
+        total = torch.norm(x)
+        return x / total
 
     def make_distinct(self, x):
         # Sort the output to ensure it's ordered (you can also add noise to break ties)
@@ -69,10 +77,10 @@ class TimestepLoss(nn.Module):
         self.beta = beta  # Controls importance of actual objective function
 
     def forward(self, output_timesteps, output_generation, target_generation):
-        # Loss 1: Penalize outputs that are outside the [0, 1] range (just as a safety check)
-        range_loss = torch.sum(
-            torch.clamp(output_timesteps, min=0.0, max=1.0) - output_timesteps
-        )
+        # # Loss 1: Penalize outputs that are outside the [0, 1] range (just as a safety check)
+        # range_loss = torch.sum(
+        #     torch.clamp(output_timesteps, min=0.0, max=1.0) - output_timesteps
+        # )
 
         # Loss 2: Penalize if the values are too close to each other (distinctness penalty)
         # Compute pairwise differences between outputs
@@ -90,7 +98,7 @@ class TimestepLoss(nn.Module):
         adjusted_mse = F.mse_loss(output_generation, target_generation)
 
         # Final custom loss: combine all components with respective weights
-        loss = self.alpha * distinctness_loss + self.beta * adjusted_mse + range_loss
+        loss = self.alpha * distinctness_loss + self.beta * adjusted_mse # + range_loss
         return loss
 
 
@@ -167,9 +175,9 @@ class TimseStepSelectorModule(pl.LightningModule):
         self,
         diffusion_model,
         input_size=2,
-        output_nTimesteps=100,
+        output_nTimesteps=20,
         loss_fn=TimestepLoss(alpha=0.0, beta=1.0),
-        learning_rate=1e-4,
+        learning_rate=1e-5,
     ):
         super(TimseStepSelectorModule, self).__init__()
         self.model = GaussianNoiseNN(
@@ -307,6 +315,7 @@ def train_time_model(
     time_model_directory,
     data_module,
     num_epochs=5000,
+    num_time_steps=20,
     num_gpus=8,
     existing_time_model=None
 ):
@@ -315,7 +324,7 @@ def train_time_model(
     diffusion_model = DiffusionModel.load_from_checkpoint(diffusion_model_path)
     model = existing_time_model
     if model is None:
-        model = TimseStepSelectorModule(diffusion_model=diffusion_model)
+        model = TimseStepSelectorModule(diffusion_model=diffusion_model, output_nTimesteps=num_time_steps)
     else:
         model = TimseStepSelectorModule.load_from_checkpoint(existing_time_model)
 
@@ -401,6 +410,15 @@ if __name__ == "__main__":
         help="Only do visualizations",
         required=False,
     )
+    parser.add_argument(
+        "-n",
+        "--numTimeSteps",
+        default=20,
+        action="store",
+        help="Enter number of time steps for model to use",
+        type=str,
+        required=False,
+    )
 
     # Parse the arguments
     args = parser.parse_args()
@@ -421,6 +439,7 @@ if __name__ == "__main__":
         time_model_directory=args.outputTimeModelDirPath,
         data_module=data_module,
         num_epochs=5000,
+        num_time_steps=args.numTimeSteps,
         num_gpus=8,
         existing_time_model=args.timeModel
     )

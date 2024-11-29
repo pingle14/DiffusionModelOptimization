@@ -4,8 +4,8 @@ import pandas as pd
 data = pd.read_csv("data.csv")
 print(data.columns)
 
-plt.scatter(data['0'], data['1'])
+plt.scatter(data['X1'], data['X2'])
 plt.savefig(f"test_1.png")
 
-plt.scatter(data['0.1'], data['1.1'])
+plt.scatter(data['Z1'], data['Z2'])
 plt.savefig(f"test_2.png")

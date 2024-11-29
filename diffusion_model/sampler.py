@@ -36,10 +36,10 @@ def noising_timestep_order(timesteps):
 def euler_sampler(model, xt, time_steps=[], device="cuda"):
     xtraj = [xt.clone()]
 
-    # time_steps = generative_denoising_timestep_order(time_steps)
-
     with torch.no_grad():
         num_time_steps = time_steps.shape[1]
+        #print(time_steps[:, -1])
+        #assert time_steps[0][-1] == 1
         for i in range(num_time_steps):
             # Time variable t decreases from 1 to 0
             # TODO: note that will need to fiddle with dimensions of this tensor
@@ -49,12 +49,11 @@ def euler_sampler(model, xt, time_steps=[], device="cuda"):
             t = step_t
             # print(t.shape) #TODO: Handle non-tensor case with : torch.full((xt.shape[0], 1), fill_value=step, device=device)
             all_ones = torch.ones_like(step_t, device=device)
-            denominator = (
+            step_size = (
                 time_steps[:, i + 1].unsqueeze(-1)
                 if i < num_time_steps - 1
                 else all_ones
             ) - step_t
-            step_size = denominator
 
             v_t = model(xt, t)
             # Update xt using Euler method
