@@ -17,7 +17,7 @@ import csv
 from torch.utils.data import random_split
 from torchmetrics import MeanMetric
 from pytorch_lightning.callbacks import ModelCheckpoint
-from diffusion_model.model import DiffusionModel
+from diffusion_model.spiral_model import DiffusionModel
 import argparse
 
 

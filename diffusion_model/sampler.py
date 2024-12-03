@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 # rom pretrained import PretrainedConvModel
 # from lightning_3 import DiffusionModel
-from diffusion_model.model import DiffusionModel
+from diffusion_model.spiral_model import DiffusionModel
 import matplotlib.pyplot as plt
 import pandas as pd
 
