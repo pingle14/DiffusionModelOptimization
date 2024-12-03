@@ -33,7 +33,16 @@ def noising_timestep_order(timesteps):
 
 
 # Euler sampling function
-def euler_sampler(model, xt, time_jumps=[], device="cuda"):
+def euler_sampler(
+    model,
+    xt,
+    time_jumps=[],
+    device="cuda",
+    guide_w=None,
+    c_t=None,
+    context_mask=None,
+    size=None,
+):
     xtraj = [xt.clone()]
 
     with torch.no_grad():
@@ -97,12 +106,13 @@ def ddpm_schedules_nonuniform(beta1, beta2, time_jumps):
     }
 
 
-def mnist_sample(
-    model, x_t, c_t, beta1, beta2, context_mask, size, time_jumps=[], device="cuda", guide_w=0.0
+def mnist_sampler(
+    model, x_t, time_jumps=[], device="cuda", guide_w=2.0, c_t=None, context_mask=None, size=None
 ):
     input_noise = []
     n_sample = x_t.shape[0]
     num_time_jumps = time_jumps.shape[1]
+    beta1, beta2 = 1e-4, 0.02 # Hardcoded betas
 
     parameters = ddpm_schedules_nonuniform(beta1, beta2, time_jumps)
 

@@ -3,7 +3,7 @@ import csv
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from diffusion_model.sampler import euler_sampler
+from diffusion_model.sampler import euler_sampler, mnist_sampler
 import torch.nn.functional as F
 import pandas as pd
 import torch
@@ -180,6 +180,7 @@ class TimseStepSelectorModule(pl.LightningModule):
         self,
         diffusion_model,
         inference_results_path,
+        sampler_fn,
         input_size=2,
         output_ntimejumps=20,
         loss_fn=TimestepLoss(alpha=0.0, beta=1.0),
@@ -198,6 +199,7 @@ class TimseStepSelectorModule(pl.LightningModule):
         self.scaler = GradScaler()
         self.diffusion_model = diffusion_model
         self.inference_results = []
+        self.sampler_fn = sampler_fn,
         for param in self.diffusion_model.parameters():
             param.requires_grad = False
 
@@ -209,11 +211,14 @@ class TimseStepSelectorModule(pl.LightningModule):
             input_noise = batch["datapoint"]
             target_generations = batch["label"]
             output_timejumps = self.model(input_noise)
-            output_generations = euler_sampler(
+            output_generations = self.sampler_fn(
                 self.diffusion_model,
                 xt=input_noise,
                 time_jumps=output_timejumps,
                 device=device,
+                c_t=None,
+                context_mask=None,
+                size=None,
             )
             loss = self.loss_fn(
                 output_timejumps, output_generations, target_generations
@@ -230,11 +235,14 @@ class TimseStepSelectorModule(pl.LightningModule):
             input_noise = batch["datapoint"]
             target_generations = batch["label"]
             output_timejumps = self.model(input_noise)
-            output_generations = euler_sampler(
+            output_generations = self.sampler_fn(
                 self.diffusion_model,
                 xt=input_noise,
                 time_jumps=output_timejumps,
                 device=device,
+                c_t=None,
+                context_mask=None,
+                size=None,
             )
             loss = self.loss_fn(
                 output_timejumps, output_generations, target_generations
@@ -250,11 +258,14 @@ class TimseStepSelectorModule(pl.LightningModule):
             input_noise = batch["datapoint"]
             target_generations = batch["label"]
             output_timejumps = self.model(input_noise)
-            output_generations = euler_sampler(
+            output_generations = self.sampler_fn(
                 self.diffusion_model,
                 xt=input_noise,
                 time_jumps=output_timejumps,
                 device=device,
+                c_t=None,
+                context_mask=None,
+                size=None,
             )
             loss = self.loss_fn(
                 output_timejumps, output_generations, target_generations
