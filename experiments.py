@@ -41,9 +41,9 @@ class GaussianNoiseNN(nn.Module):
         x = self.relu(self.fc1(x))  # Pass input through the first hidden layer
         x = self.relu(self.fc2(x))  # Pass through the second hidden layer
         # Apply sigmoid to output to ensure it's between [0, 1]
-        x = self.softmax(self.fc3(x)) # Replaced sigmoid with softmax in Approach 2
+        x = self.softmax(self.fc3(x))  # Replaced sigmoid with softmax in Approach 2
 
-        x = torch.cumsum(x, dim=1) # Prefix Sum to convert changes to timesteps
+        x = torch.cumsum(x, dim=1)  # Prefix Sum to convert changes to timesteps
 
         # Post-processing to make sure outputs are distinct
         # Normalize
@@ -98,16 +98,18 @@ class TimestepLoss(nn.Module):
         adjusted_mse = F.mse_loss(output_generation, target_generation)
 
         # Final custom loss: combine all components with respective weights
-        loss = self.alpha * distinctness_loss + self.beta * adjusted_mse # + range_loss
+        loss = self.alpha * distinctness_loss + self.beta * adjusted_mse  # + range_loss
         return loss
 
 
 class CSVDataset(Dataset):
-    def __init__(self, df):
+    def __init__(self, df, dims=2):
         df = pd.read_csv("diffusion_model/data.csv")
-        df.drop(columns=["Iteration"], inplace=True)
-        self.input_noise = np.array(df[["Z1", "Z2"]])
-        self.target_generation = np.array(df[["X1", "X2"]])
+        if "Iteration" in df.columns:
+            df.drop(columns=["Iteration"], inplace=True)
+        self.dims = dims
+        self.input_noise = np.array(df[[f"Z{i+1}" for i in range(self.dims)]])
+        self.target_generation = np.array(df[[f"X{i+1}" for i in range(self.dims)]])
         self.n_samples = len(self.input_noise)
 
     def __len__(self):
@@ -123,17 +125,20 @@ class CSVDataset(Dataset):
 
 # DataModule to handle data loading
 class CSVDataModule(pl.LightningDataModule):
-    def __init__(self, csv_file, batch_size=128, train_val_test_split=[0.8, 0.1, 0.1]):
+    def __init__(
+        self, csv_file, dims, batch_size=128, train_val_test_split=[0.8, 0.1, 0.1]
+    ):
         super().__init__()
         ### TODO: sample datapoints from the toy function, either pre-computed, or create them here
         # self.csv_file = csv_file
         self.batch_size = batch_size
+        self.dims = dims
         self.df = pd.read_csv(csv_file)
         self.train_val_test_split = train_val_test_split
 
     def setup(self, stage=None):
         # df = pd.read_csv(self.csv_file)
-        self.dataset = CSVDataset(df=self.df)
+        self.dataset = CSVDataset(df=self.df, dims=self.dims)
         self.train_dataset, self.val_dataset, self.test_dataset = random_split(
             self.dataset, self.train_val_test_split
         )
@@ -174,6 +179,7 @@ class TimseStepSelectorModule(pl.LightningModule):
     def __init__(
         self,
         diffusion_model,
+        inference_results_path,
         input_size=2,
         output_nTimesteps=20,
         loss_fn=TimestepLoss(alpha=0.0, beta=1.0),
@@ -183,6 +189,7 @@ class TimseStepSelectorModule(pl.LightningModule):
         self.model = GaussianNoiseNN(
             input_size=input_size, output_nTimesteps=output_nTimesteps
         )
+        self.inference_results_path = inference_results_path
         self.learning_rate = learning_rate
         self.loss_fn = loss_fn
         self.train_loss = MeanMetric()
@@ -291,16 +298,16 @@ class TimseStepSelectorModule(pl.LightningModule):
         print("Saving inference results to CSV...")
         # Use pandas for easy saving to CSV
         df = pd.DataFrame(self.inference_results)
-        df.to_csv("inference_results.csv", index=False)
-        plt.scatter(df.values[:, 0], df.values[:, 1])
-        plt.savefig(f"input_noise.png")
-        plt.close()
-        plt.scatter(df.values[:, 2], df.values[:, 3])
-        plt.savefig(f"small_time_prediction.png")
-        plt.close()
-        plt.scatter(df.values[:, 4], df.values[:, 5])
-        plt.savefig(f"actual.png")
-        plt.close()
+        df.to_csv(self.inference_results_path, index=False)
+        # plt.scatter(df.values[:, 0], df.values[:, 1])
+        # plt.savefig(f"input_noise.png")
+        # plt.close()
+        # plt.scatter(df.values[:, 2], df.values[:, 3])
+        # plt.savefig(f"small_time_prediction.png")
+        # plt.close()
+        # plt.scatter(df.values[:, 4], df.values[:, 5])
+        # plt.savefig(f"actual.png")
+        # plt.close()
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.model.parameters(), lr=self.learning_rate)
@@ -313,18 +320,23 @@ class TimseStepSelectorModule(pl.LightningModule):
 def train_time_model(
     diffusion_model_path,
     time_model_directory,
+    inference_results_path,
     data_module,
     num_epochs=5000,
     num_time_steps=20,
     num_gpus=8,
-    existing_time_model=None
+    existing_time_model=None,
 ):
 
     # Instantiate the model, data module, and trainer
     diffusion_model = DiffusionModel.load_from_checkpoint(diffusion_model_path)
     model = existing_time_model
     if model is None:
-        model = TimseStepSelectorModule(diffusion_model=diffusion_model, output_nTimesteps=num_time_steps)
+        model = TimseStepSelectorModule(
+            diffusion_model=diffusion_model,
+            inference_results_path=inference_results_path,
+            output_nTimesteps=num_time_steps,
+        )
     else:
         model = TimseStepSelectorModule.load_from_checkpoint(existing_time_model)
 
@@ -351,14 +363,16 @@ def train_time_model(
 
 def visualize_model(data_module, time_model_path, diffusion_model):
     # TODO: Ok to load from this checkpoint? Will it know the Diffusion Model?
-    time_model = TimseStepSelectorModule.load_from_checkpoint(time_model_path, **{"diffusion_model": diffusion_model})
+    time_model = TimseStepSelectorModule.load_from_checkpoint(
+        time_model_path, **{"diffusion_model": diffusion_model}
+    )
 
     # Initialize the PyTorch Lightning Trainer
     trainer = pl.Trainer(
         max_epochs=1,
-        accelerator='gpu',
+        accelerator="gpu",
         devices=1,
-        precision='16-mixed',  # Updated precision
+        precision="16-mixed",  # Updated precision
         num_nodes=1,
     )
 
@@ -419,17 +433,35 @@ if __name__ == "__main__":
         type=str,
         required=False,
     )
+    parser.add_argument(
+        "-d",
+        "--dims",
+        action="store",
+        help="Enter dims in the inference dataset (for MNIST this is 784)",
+        type=int,
+        required=True,
+    )
+    parser.add_argument(
+        "-r",
+        "--inferenceResultsPath",
+        action="store",
+        help="Enter path where to store inference CSV",
+        type=str,
+        required=True,
+    )
 
     # Parse the arguments
     args = parser.parse_args()
 
     # CSV: "diffusion_model/data.csv"
-    data_module = CSVDataModule(
-        csv_file=args.csvFile, batch_size=10000
-    )
+    data_module = CSVDataModule(csv_file=args.csvFile, dims=args.dims, batch_size=10000)
 
     if args.visualize:
-        visualize_model(data_module=data_module, time_model_path=args.timeModel, diffusion_model=DiffusionModel.load_from_checkpoint(args.diffusionModel))
+        visualize_model(
+            data_module=data_module,
+            time_model_path=args.timeModel,
+            diffusion_model=DiffusionModel.load_from_checkpoint(args.diffusionModel),
+        )
         exit()
 
     train_time_model(
@@ -437,9 +469,10 @@ if __name__ == "__main__":
         diffusion_model_path=args.diffusionModel,
         # "time_model_files/"
         time_model_directory=args.outputTimeModelDirPath,
+        inference_results_path=args.inferenceResultsPath,
         data_module=data_module,
         num_epochs=5000,
         num_time_steps=args.numTimeSteps,
         num_gpus=8,
-        existing_time_model=args.timeModel
+        existing_time_model=args.timeModel,
     )
