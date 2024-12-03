@@ -24,13 +24,13 @@ import argparse
 # Define the Neural Network model
 # Input = Noise, Output = Timesteps (k)
 class GaussianNoiseNN(nn.Module):
-    def __init__(self, input_size=2, output_nTimesteps=500):
+    def __init__(self, input_size=2, output_ntimejumps=500):
         super(GaussianNoiseNN, self).__init__()
 
         # Define the layers of the network
         self.fc1 = nn.Linear(input_size, 64)  # First hidden layer with 64 units
         self.fc2 = nn.Linear(64, 128)  # Second hidden layer with 128 units
-        self.fc3 = nn.Linear(128, output_nTimesteps)  # Output layer with k units
+        self.fc3 = nn.Linear(128, output_ntimejumps)  # Output layer with k units
 
         # Activation functions
         self.relu = nn.ReLU()
@@ -43,7 +43,7 @@ class GaussianNoiseNN(nn.Module):
         # Apply sigmoid to output to ensure it's between [0, 1]
         x = self.softmax(self.fc3(x))  # Replaced sigmoid with softmax in Approach 2
 
-        x = torch.cumsum(x, dim=1)  # Prefix Sum to convert changes to timesteps
+        x = torch.cumsum(x, dim=1)  # Prefix Sum to convert changes to timejumps
 
         # Post-processing to make sure outputs are distinct
         # Normalize
@@ -76,16 +76,16 @@ class TimestepLoss(nn.Module):
         self.alpha = alpha  # Controls the importance of the distinctness penalty
         self.beta = beta  # Controls importance of actual objective function
 
-    def forward(self, output_timesteps, output_generation, target_generation):
+    def forward(self, output_timejumps, output_generation, target_generation):
         # # Loss 1: Penalize outputs that are outside the [0, 1] range (just as a safety check)
         # range_loss = torch.sum(
-        #     torch.clamp(output_timesteps, min=0.0, max=1.0) - output_timesteps
+        #     torch.clamp(output_timejumps, min=0.0, max=1.0) - output_timejumps
         # )
 
         # Loss 2: Penalize if the values are too close to each other (distinctness penalty)
         # Compute pairwise differences between outputs
         pairwise_diff = torch.triu(
-            torch.abs(output_timesteps[:, None] - output_timesteps), diagonal=1
+            torch.abs(output_timejumps[:, None] - output_timejumps), diagonal=1
         )
         distinctness_loss = torch.sum(
             torch.exp(-pairwise_diff)
@@ -181,13 +181,13 @@ class TimseStepSelectorModule(pl.LightningModule):
         diffusion_model,
         inference_results_path,
         input_size=2,
-        output_nTimesteps=20,
+        output_ntimejumps=20,
         loss_fn=TimestepLoss(alpha=0.0, beta=1.0),
         learning_rate=1e-5,
     ):
         super(TimseStepSelectorModule, self).__init__()
         self.model = GaussianNoiseNN(
-            input_size=input_size, output_nTimesteps=output_nTimesteps
+            input_size=input_size, output_ntimejumps=output_ntimejumps
         )
         self.inference_results_path = inference_results_path
         self.learning_rate = learning_rate
@@ -208,15 +208,15 @@ class TimseStepSelectorModule(pl.LightningModule):
         with autocast(device_type="cuda"):
             input_noise = batch["datapoint"]
             target_generations = batch["label"]
-            output_timesteps = self.model(input_noise)
+            output_timejumps = self.model(input_noise)
             output_generations = euler_sampler(
                 self.diffusion_model,
                 xt=input_noise,
-                time_steps=output_timesteps,
+                time_jumps=output_timejumps,
                 device=device,
             )
             loss = self.loss_fn(
-                output_timesteps, output_generations, target_generations
+                output_timejumps, output_generations, target_generations
             )
 
         # Log the loss
@@ -229,15 +229,15 @@ class TimseStepSelectorModule(pl.LightningModule):
         with autocast(device_type="cuda"):
             input_noise = batch["datapoint"]
             target_generations = batch["label"]
-            output_timesteps = self.model(input_noise)
+            output_timejumps = self.model(input_noise)
             output_generations = euler_sampler(
                 self.diffusion_model,
                 xt=input_noise,
-                time_steps=output_timesteps,
+                time_jumps=output_timejumps,
                 device=device,
             )
             loss = self.loss_fn(
-                output_timesteps, output_generations, target_generations
+                output_timejumps, output_generations, target_generations
             )
 
         # Log the loss
@@ -249,15 +249,15 @@ class TimseStepSelectorModule(pl.LightningModule):
         with autocast(device_type="cuda"):
             input_noise = batch["datapoint"]
             target_generations = batch["label"]
-            output_timesteps = self.model(input_noise)
+            output_timejumps = self.model(input_noise)
             output_generations = euler_sampler(
                 self.diffusion_model,
                 xt=input_noise,
-                time_steps=output_timesteps,
+                time_jumps=output_timejumps,
                 device=device,
             )
             loss = self.loss_fn(
-                output_timesteps, output_generations, target_generations
+                output_timejumps, output_generations, target_generations
             )
 
         # Log the loss
@@ -323,7 +323,7 @@ def train_time_model(
     inference_results_path,
     data_module,
     num_epochs=5000,
-    num_time_steps=20,
+    num_time_jumps=20,
     num_gpus=8,
     existing_time_model=None,
 ):
@@ -335,7 +335,7 @@ def train_time_model(
         model = TimseStepSelectorModule(
             diffusion_model=diffusion_model,
             inference_results_path=inference_results_path,
-            output_nTimesteps=num_time_steps,
+            output_ntimejumps=num_time_jumps,
         )
     else:
         model = TimseStepSelectorModule.load_from_checkpoint(existing_time_model)
@@ -426,7 +426,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-n",
-        "--numTimeSteps",
+        "--numTimeJumps",
         default=20,
         action="store",
         help="Enter number of time steps for model to use",
@@ -472,7 +472,7 @@ if __name__ == "__main__":
         inference_results_path=args.inferenceResultsPath,
         data_module=data_module,
         num_epochs=5000,
-        num_time_steps=args.numTimeSteps,
+        num_time_jumps=args.numTimeJumps,
         num_gpus=8,
         existing_time_model=args.timeModel,
     )
