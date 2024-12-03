@@ -14,8 +14,6 @@ This technique also features in ImageGen 'Photorealistic Text-to-Image Diffusion
 https://arxiv.org/abs/2205.11487
 
 '''
-
-from typing import Dict, Tuple
 from tqdm import tqdm
 import torch
 import torch.nn as nn
@@ -27,6 +25,10 @@ from torchvision.utils import save_image, make_grid
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 import numpy as np
+import csv
+from PIL import Image
+
+MNIST_LEN = 28
 
 class ResidualConvBlock(nn.Module):
     def __init__(
@@ -313,99 +315,75 @@ class DDPM(nn.Module):
         return x_i, x_i_store
 
 
-def train_mnist():
+# Convert MNIST-like grayscale image to CSV (append mode)
+def image_to_csv(image_path, csv_path):
+    # Open the image in grayscale mode (mode "L" for 8-bit pixels)
+    image = Image.open(image_path).convert("L")
 
-    # hardcoding these here
-    n_epoch = 20
-    batch_size = 256
-    n_T = 400 # 500
-    device = "cuda:0"
-    n_classes = 10
-    n_feat = 128 # 128 ok, 256 better (but slower)
-    lrate = 1e-4
-    save_model = False
-    save_dir = './data/diffusion_outputs10/'
-    ws_test = [0.0, 0.5, 2.0] # strength of generative guidance
+    # Ensure the image is 28x28 pixels (for MNIST)
+    image = image.resize((28, 28))
 
-    ddpm = DDPM(nn_model=ContextUnet(in_channels=1, n_feat=n_feat, n_classes=n_classes), betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
-    ddpm.to(device)
+    # Get the pixel data as a 2D numpy array (each value is between 0 and 255)
+    pixels = np.array(image)
 
-    # optionally load a model
-    # ddpm.load_state_dict(torch.load("./data/diffusion_outputs/ddpm_unet01_mnist_9.pth"))
+    # Open the CSV file in append mode ('a')
+    with open(csv_path, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        # Write the pixel data as a new row in the CSV
+        writer.writerow(pixels.flatten())  # Flatten the 2D array to 1D
 
-    tf = transforms.Compose([transforms.ToTensor()]) # mnist is already normalised 0 to 1
 
-    dataset = MNIST("./data", train=True, download=True, transform=tf)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
-    optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
+# Convert a list of MNIST-like grayscale images to a CSV (appending mode for each image)
+def save_images_to_csv(image_paths, csv_path):
+    """
+    Saves multiple images to the same CSV file by appending their pixel data.
 
-    for ep in range(n_epoch):
-        print(f'epoch {ep}')
-        ddpm.train()
+    :param image_paths: List of image file paths to process
+    :param csv_path: Path to the CSV file where the pixel data will be saved
+    """
+    # Iterate over all image paths and save each image to the CSV
+    with open(csv_path, mode='w') as file:
+        writer = csv.writer(file)
+        writer.writerow([f"X{i+1}" for i in range(MNIST_LEN * MNIST_LEN)])
 
-        # linear lrate decay
-        optim.param_groups[0]['lr'] = lrate*(1-ep/n_epoch)
+    for image_path in image_paths:
+        image_to_csv(image_path, csv_path)
 
-        pbar = tqdm(dataloader)
-        loss_ema = None
-        for x, c in pbar:
-            optim.zero_grad()
-            x = x.to(device)
-            c = c.to(device)
-            loss = ddpm(x, c)
-            loss.backward()
-            if loss_ema is None:
-                loss_ema = loss.item()
-            else:
-                loss_ema = 0.95 * loss_ema + 0.05 * loss.item()
-            pbar.set_description(f"loss: {loss_ema:.4f}")
-            optim.step()
-        
-        # for eval, save an image of currently generated samples (top rows)
-        # followed by real images (bottom rows)
-        ddpm.eval()
-        with torch.no_grad():
-            n_sample = 4*n_classes
-            for w_i, w in enumerate(ws_test):
-                x_gen, x_gen_store = ddpm.sample(n_sample, (1, 28, 28), device, guide_w=w)
+    print(f"All images have been successfully saved to {csv_path}")
 
-                # append some real images at bottom, order by class also
-                x_real = torch.Tensor(x_gen.shape).to(device)
-                for k in range(n_classes):
-                    for j in range(int(n_sample/n_classes)):
-                        try: 
-                            idx = torch.squeeze((c == k).nonzero())[j]
-                        except:
-                            idx = 0
-                        x_real[k+(j*n_classes)] = x[idx]
 
-                x_all = torch.cat([x_gen, x_real])
-                grid = make_grid(x_all*-1 + 1, nrow=10)
-                save_image(grid, save_dir + f"image_ep{ep}_w{w}.png")
-                print('saved image at ' + save_dir + f"image_ep{ep}_w{w}.png")
+def csv_to_image(csv_path, row_index, image_path):
+    """
+    Converts a row from a CSV into a grayscale image.
 
-                if ep%5==0 or ep == int(n_epoch-1):
-                    # create gif of images evolving over time, based on x_gen_store
-                    fig, axs = plt.subplots(nrows=int(n_sample/n_classes), ncols=n_classes,sharex=True,sharey=True,figsize=(8,3))
-                    def animate_diff(i, x_gen_store):
-                        print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
-                        plots = []
-                        for row in range(int(n_sample/n_classes)):
-                            for col in range(n_classes):
-                                axs[row, col].clear()
-                                axs[row, col].set_xticks([])
-                                axs[row, col].set_yticks([])
-                                # plots.append(axs[row, col].imshow(x_gen_store[i,(row*n_classes)+col,0],cmap='gray'))
-                                plots.append(axs[row, col].imshow(-x_gen_store[i,(row*n_classes)+col,0],cmap='gray',vmin=(-x_gen_store[i]).min(), vmax=(-x_gen_store[i]).max()))
-                        return plots
-                    ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-                    ani.save(save_dir + f"gif_ep{ep}_w{w}.gif", dpi=100, writer=PillowWriter(fps=5))
-                    print('saved image at ' + save_dir + f"gif_ep{ep}_w{w}.gif")
-        # optionally save model
-        if save_model and ep == int(n_epoch-1):
-            torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
-            print('saved model at ' + save_dir + f"model_{ep}.pth")
+    :param csv_path: Path to the CSV file
+    :param row_index: Index of the row to convert (starting from 0)
+    :param image_path: Path where the image will be saved
+    """
+    if row_index == 0:
+        raise ValueError(
+            f"Row index must be > 0, since cant make an image from the field headers"
+        )
+    # Read the pixel data from the CSV file
+    with open(csv_path, mode="r") as file:
+        reader = csv.reader(file)
+        # Extract the row specified by the row_index
+        for i, row in enumerate(reader):
+            if i == row_index:
+                pixels = list(map(int, row))  # Convert string data to integers
+                break
 
-if __name__ == "__main__":
-    train_mnist()
+    # Convert the row into a numpy array and reshape it to 28x28 pixels
+    pixels_array = np.array(pixels, dtype=np.uint8)
+    pixels_array = pixels_array.reshape((28, 28))  # Reshape to 28x28 pixels
+
+    # Convert the numpy array back to an image in grayscale mode
+    image = Image.fromarray(pixels_array, mode="L")
+
+    # Save the image
+    image.save(image_path)
+    print(
+        f"Row {row_index} has been successfully converted to an image and saved at {image_path}"
+    )
+
 
