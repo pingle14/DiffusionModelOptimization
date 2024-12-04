@@ -228,7 +228,6 @@ class TimseStepSelectorModule(pl.LightningModule):
                 time_jumps=output_timejumps,
                 device=device,
                 c_t=condition_label,
-                size=None,
             )
             loss = self.loss_fn(
                 output_timejumps, output_generations, target_generations
@@ -252,7 +251,6 @@ class TimseStepSelectorModule(pl.LightningModule):
                 time_jumps=output_timejumps,
                 device=device,
                 c_t=condition_label,
-                size=None,
             )
             loss = self.loss_fn(
                 output_timejumps, output_generations, target_generations
@@ -275,7 +273,6 @@ class TimseStepSelectorModule(pl.LightningModule):
                 time_jumps=output_timejumps,
                 device=device,
                 c_t=condition_label,
-                size=None,
             )
             loss = self.loss_fn(
                 output_timejumps, output_generations, target_generations

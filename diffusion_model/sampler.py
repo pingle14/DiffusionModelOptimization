@@ -23,6 +23,9 @@ model.eval()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)"""
 
+MNIST_BETAS = 1e-4, 0.02 # Hardcoded betas
+MNIST_IMG_SZ = (1, 28, 28) # Hardcoded
+
 
 def generative_denoising_timestep_order(timesteps):
     return reversed(timesteps)
@@ -105,18 +108,34 @@ def ddpm_schedules_nonuniform(beta1, beta2, time_jumps):
         "mab_over_sqrtmab": mab_over_sqrtmab_inv,  # (1-\alpha_t)/\sqrt{1-\bar{\alpha_t}}
     }
 
+"""
+output_generations = self.sampler_fn(
+                self.diffusion_model,
+                xt=input_noise,
+                time_jumps=output_timejumps,
+                device=device,
+                c_t=condition_label,
+                size=None,
+            )
 
+"""
 def mnist_sampler(
-    model, x_t, time_jumps=[], device="cuda", guide_w=2.0, c_t=None, context_mask=None, size=None
+    model, x_t, time_jumps=[], device="cuda", guide_w=2.0, c_t=None
 ):
-    input_noise = []
     n_sample = x_t.shape[0]
     num_time_jumps = time_jumps.shape[1]
-    beta1, beta2 = 1e-4, 0.02 # Hardcoded betas
+    beta1, beta2 = MNIST_BETAS # Hardcoded betas
+    size = MNIST_IMG_SZ # Hardcoded
 
     parameters = ddpm_schedules_nonuniform(beta1, beta2, time_jumps)
 
+    """
+    c_i (context) and context_mask are repeated twice. 
+    The second half of the batch is set to context-free by setting the second half of context_mask to 1.
+    TEHCNIQUE: classifier-free guidance: half of the batch is conditioned and the other half is not
+    """
     c_t = c_t.repeat(2)
+    context_mask = torch.zeros_like(c_t).to(device)
     context_mask = context_mask.repeat(2)
     context_mask[n_sample:] = 1.0  # makes second half of batch context free
 
@@ -124,26 +143,26 @@ def mnist_sampler(
     for i in range(num_time_jumps):  
         # NOTE: when we use our own timesteps, we simply modify this line here, to use our generated timesteps
         # NOTE: Default: [i / self.n_Timesteps]
-        t_is = torch.tensor(time_jumps).to(device)
-
+        t_is = torch.tensor(time_jumps[:, i].unsqueeze(-1))
         t_is = t_is.repeat(n_sample, 1, 1, 1)
 
         # double batch
         x_t = x_t.repeat(2, 1, 1, 1)
         t_is = t_is.repeat(2, 1, 1, 1)
 
+        # Brownian motion
         z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
-        input_noise.append(z)
 
         # split predictions and compute weighting
-        eps = model(x_t, c_t, t_is, context_mask)
-        eps1 = eps[:n_sample]
-        eps2 = eps[n_sample:]
-        eps = (1 + guide_w) * eps1 - guide_w * eps2
+        vt_eps = model(x_t, c_t, t_is, context_mask)
+        vt_eps1 = vt_eps[:n_sample]
+        vt_eps2 = vt_eps[n_sample:]
+        # Classifier-Free guidance: 
+        vt_eps = (1 + guide_w) * vt_eps1 - guide_w * vt_eps2
         x_t = x_t[:n_sample]
         x_t = (
             parameters["oneover_sqrta"][i]
-            * (x_t - eps * parameters["mab_over_sqrtmab"][i])
+            * (x_t - vt_eps * parameters["mab_over_sqrtmab"][i])
             + parameters["sqrt_beta_t"][i] * z
         )
 
