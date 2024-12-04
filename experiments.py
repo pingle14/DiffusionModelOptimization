@@ -20,9 +20,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from diffusion_model.spiral_model import DiffusionModel
 import argparse
 
+sampler_fns = {'spiral':euler_sampler, 'mnist': mnist_sampler}
 
 # Define the Neural Network model
 # Input = Noise, Output = Timesteps (k)
+# TODO: Add class label here?
 class GaussianNoiseNN(nn.Module):
     def __init__(self, input_size=2, output_ntimejumps=500):
         super(GaussianNoiseNN, self).__init__()
@@ -92,9 +94,6 @@ class TimestepLoss(nn.Module):
         )  # Penalize small differences
 
         # Loss 3: Actual Objective Function
-        # print(output_generation.shape)
-        # print(target_generation.shape)
-
         adjusted_mse = F.mse_loss(output_generation, target_generation)
 
         # Final custom loss: combine all components with respective weights
@@ -103,13 +102,16 @@ class TimestepLoss(nn.Module):
 
 
 class CSVDataset(Dataset):
-    def __init__(self, df, dims=2):
-        df = pd.read_csv("diffusion_model/data.csv")
+    def __init__(self, df, dims=2, conditional_col='C'):
         if "Iteration" in df.columns:
             df.drop(columns=["Iteration"], inplace=True)
+        if 'Unnamed: 0' in df.columns:
+            df.drop(columns=['Unnamed: 0'], inplace=True)
         self.dims = dims
+        self.conditional = conditional_col in df.columns
         self.input_noise = np.array(df[[f"Z{i+1}" for i in range(self.dims)]])
         self.target_generation = np.array(df[[f"X{i+1}" for i in range(self.dims)]])
+        self.class_label = np.array(df["C"]) if self.conditional else None
         self.n_samples = len(self.input_noise)
 
     def __len__(self):
@@ -117,28 +119,36 @@ class CSVDataset(Dataset):
 
     def __getitem__(self, idx):
         # Return the data point and its corresponding parameter t value
-        return {
-            "datapoint": torch.tensor(self.input_noise[idx], dtype=torch.float32),
-            "label": torch.tensor(self.target_generation[idx], dtype=torch.float32),
+        item = {
+            "input_noise": torch.tensor(self.input_noise[idx], dtype=torch.float32),
+            "output_generation": torch.tensor(self.target_generation[idx], dtype=torch.float32)
         }
+        if self.conditional:
+            item["condition_label"] = torch.tensor(self.class_label[idx], dtype=torch.float32)
+        return item
 
 
 # DataModule to handle data loading
 class CSVDataModule(pl.LightningDataModule):
     def __init__(
-        self, csv_file, dims, batch_size=128, train_val_test_split=[0.8, 0.1, 0.1]
+        self,
+        csv_file,
+        dims,
+        conditional_col='C',
+        batch_size=128,
+        train_val_test_split=[0.8, 0.1, 0.1],
     ):
         super().__init__()
         ### TODO: sample datapoints from the toy function, either pre-computed, or create them here
-        # self.csv_file = csv_file
         self.batch_size = batch_size
         self.dims = dims
+        self.conditional_col = conditional_col
         self.df = pd.read_csv(csv_file)
         self.train_val_test_split = train_val_test_split
 
     def setup(self, stage=None):
         # df = pd.read_csv(self.csv_file)
-        self.dataset = CSVDataset(df=self.df, dims=self.dims)
+        self.dataset = CSVDataset(df=self.df, dims=self.dims, conditional_col=self.conditional_col)
         self.train_dataset, self.val_dataset, self.test_dataset = random_split(
             self.dataset, self.train_val_test_split
         )
@@ -208,16 +218,16 @@ class TimseStepSelectorModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         with autocast(device_type="cuda"):
-            input_noise = batch["datapoint"]
-            target_generations = batch["label"]
+            input_noise = batch["input_noise"]
+            target_generations = batch["output_generation"]
+            condition_label = batch.get('condition_label', None)
             output_timejumps = self.model(input_noise)
             output_generations = self.sampler_fn(
                 self.diffusion_model,
                 xt=input_noise,
                 time_jumps=output_timejumps,
                 device=device,
-                c_t=None,
-                context_mask=None,
+                c_t=condition_label,
                 size=None,
             )
             loss = self.loss_fn(
@@ -232,16 +242,16 @@ class TimseStepSelectorModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         with autocast(device_type="cuda"):
-            input_noise = batch["datapoint"]
-            target_generations = batch["label"]
+            input_noise = batch["input_noise"]
+            target_generations = batch["output_generation"]
+            condition_label = batch.get("condition_label", None)
             output_timejumps = self.model(input_noise)
             output_generations = self.sampler_fn(
                 self.diffusion_model,
                 xt=input_noise,
                 time_jumps=output_timejumps,
                 device=device,
-                c_t=None,
-                context_mask=None,
+                c_t=condition_label,
                 size=None,
             )
             loss = self.loss_fn(
@@ -255,16 +265,16 @@ class TimseStepSelectorModule(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         with autocast(device_type="cuda"):
-            input_noise = batch["datapoint"]
-            target_generations = batch["label"]
+            input_noise = batch["input_noise"]
+            target_generations = batch["output_generation"]
+            condition_label = batch.get("condition_label", None)
             output_timejumps = self.model(input_noise)
             output_generations = self.sampler_fn(
                 self.diffusion_model,
                 xt=input_noise,
                 time_jumps=output_timejumps,
                 device=device,
-                c_t=None,
-                context_mask=None,
+                c_t=condition_label,
                 size=None,
             )
             loss = self.loss_fn(
@@ -286,21 +296,25 @@ class TimseStepSelectorModule(pl.LightningModule):
             # Target tensor as numpy
             target_data = target_generations[i].cpu().numpy()
 
+            item = {
+                **{
+                    f"input_{j}": input_data[j] for j in range(len(input_data))
+                },  # Each element in input_noise
+                **{
+                    f"predicted_{j}": predicted_data[j]
+                    for j in range(len(predicted_data))
+                },  # Each element in output_generations
+                **{
+                    f"target_{j}": target_data[j] for j in range(len(target_data))
+                },  # Each element in target_generations
+            }
+
+            if 'condition_label' in batch:
+                condition_data = condition_label[i].cpu().numpy()
+                item["condition_label"] = condition_data
+
             # Add each example's data to the results list
-            self.inference_results.append(
-                {
-                    **{
-                        f"input_{j}": input_data[j] for j in range(len(input_data))
-                    },  # Each element in input_noise
-                    **{
-                        f"predicted_{j}": predicted_data[j]
-                        for j in range(len(predicted_data))
-                    },  # Each element in output_generations
-                    **{
-                        f"target_{j}": target_data[j] for j in range(len(target_data))
-                    },  # Each element in target_generations
-                }
-            )
+            self.inference_results.append(item)
 
         return loss
 
@@ -332,6 +346,7 @@ def train_time_model(
     diffusion_model_path,
     time_model_directory,
     inference_results_path,
+    sampler_fn_name,
     data_module,
     num_epochs=5000,
     num_time_jumps=20,
@@ -346,6 +361,7 @@ def train_time_model(
         model = TimseStepSelectorModule(
             diffusion_model=diffusion_model,
             inference_results_path=inference_results_path,
+            sampler_fn=sampler_fns[sampler_fn_name],
             output_ntimejumps=num_time_jumps,
         )
     else:
@@ -397,7 +413,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Experiment CLI args")
     # Add arguments
     parser.add_argument(
-        "-d",
+        "-m",
         "--diffusionModel",
         action="store",
         help="Enter path where to load fully trained diffusion model",
@@ -460,6 +476,13 @@ if __name__ == "__main__":
         type=str,
         required=True,
     )
+    # Add argument with restricted choices
+    parser.add_argument(
+        "s",
+        "--sampler",
+        choices=list(sampler_fns.keys()),
+        help=f"Choose a dataset sampler: {list(sampler_fns.keys())}",
+    )
 
     # Parse the arguments
     args = parser.parse_args()
@@ -481,6 +504,7 @@ if __name__ == "__main__":
         # "time_model_files/"
         time_model_directory=args.outputTimeModelDirPath,
         inference_results_path=args.inferenceResultsPath,
+        sampler_fn_name=args.sampler,
         data_module=data_module,
         num_epochs=5000,
         num_time_jumps=args.numTimeJumps,
