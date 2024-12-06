@@ -121,53 +121,54 @@ output_generations = self.sampler_fn(
 def mnist_sampler(
     model, xt, time_jumps=[], device="cuda", guide_w=2.0, c_t=None
 ):
-    n_sample = xt.shape[0]
-    num_time_jumps = time_jumps.shape[1]
-    beta1, beta2 = MNIST_BETAS # Hardcoded betas
-    size = MNIST_IMG_SZ # Hardcoded
-    time_jumps = time_jumps.flip(dims=[1])
-    # reversed(time_jumps) #TODO: CHeck
-    parameters = ddpm_schedules_nonuniform(beta1, beta2, time_jumps)
+    with torch.no_grad():
+        n_sample = xt.shape[0]
+        num_time_jumps = time_jumps.shape[1]
+        beta1, beta2 = MNIST_BETAS # Hardcoded betas
+        size = MNIST_IMG_SZ # Hardcoded
+        time_jumps = time_jumps.flip(dims=[1])
+        # reversed(time_jumps) #TODO: CHeck
+        parameters = ddpm_schedules_nonuniform(beta1, beta2, time_jumps)
 
-    """
-    c_i (context) and context_mask are repeated twice. 
-    The second half of the batch is set to context-free by setting the second half of context_mask to 1.
-    TEHCNIQUE: classifier-free guidance: half of the batch is conditioned and the other half is not
-    """
-    context_mask = torch.zeros_like(c_t).to(device)
-    c_t = c_t.repeat(2)
-    context_mask = context_mask.repeat(2)
-    context_mask[n_sample:] = 1.0  # makes second half of batch context free
-    xt = xt.reshape(xt.shape[0], 1, 28, 28)
-    # MNIST TIMESTEPS are backwards!: self.n_Timesteps, 0, -
-    for i in range(num_time_jumps):  
-        # NOTE: when we use our own timesteps, we simply modify this line here, to use our generated timesteps
-        # NOTE: Default: [i / self.n_Timesteps]
-        t_is = time_jumps[:, i].reshape(time_jumps.shape[0], 1, 1, 1)
-        #t_is = t_is.repeat(1, 1, 1, 1) 
+        """
+        c_i (context) and context_mask are repeated twice. 
+        The second half of the batch is set to context-free by setting the second half of context_mask to 1.
+        TEHCNIQUE: classifier-free guidance: half of the batch is conditioned and the other half is not
+        """
+        context_mask = torch.zeros_like(c_t).to(device)
+        c_t = c_t.repeat(2)
+        context_mask = context_mask.repeat(2)
+        context_mask[n_sample:] = 1.0  # makes second half of batch context free
+        xt = xt.view(xt.shape[0], 1, 28, 28)
+        # MNIST TIMESTEPS are backwards!: self.n_Timesteps, 0, -
+        for i in range(num_time_jumps):  
+            # NOTE: when we use our own timesteps, we simply modify this line here, to use our generated timesteps
+            # NOTE: Default: [i / self.n_Timesteps]
+            t_is = time_jumps[:, i].view(time_jumps.shape[0], 1, 1, 1)
+            #t_is = t_is.repeat(1, 1, 1, 1) 
 
-        # double batch
-        xt = xt.repeat(2, 1, 1, 1)
-        t_is = t_is.repeat(2, 1, 1, 1)
+            # double batch
+            xt = xt.repeat(2, 1, 1, 1)
+            t_is = t_is.repeat(2, 1, 1, 1)
 
-        # Brownian motion
-        z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
-        vt_eps = model.nn_model(xt, c_t, t_is, context_mask)
-        
-        vt_eps1 = vt_eps[:n_sample]
-        vt_eps2 = vt_eps[n_sample:]
-        # Classifier-Free guidance: 
-        vt_eps = (1 + guide_w) * vt_eps1 - guide_w * vt_eps2
-        xt = xt[:n_sample]
+            # Brownian motion
+            z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
+            vt_eps = model.nn_model(xt, c_t, t_is, context_mask)
+            
+            vt_eps1 = vt_eps[:n_sample]
+            vt_eps2 = vt_eps[n_sample:]
+            # Classifier-Free guidance: 
+            vt_eps = (1 + guide_w) * vt_eps1 - guide_w * vt_eps2
+            xt = xt[:n_sample]
 
-        # 125, 1, 28, 28
-        # parameters : 125, 1 -> 125, 1, 1, 1
-        xt = (
-            parameters["oneover_sqrta"][:, i].reshape(-1, 1, 1, 1)
-            * (xt - vt_eps * parameters["mab_over_sqrtmab"][:, i].reshape(-1, 1, 1, 1))
-            + parameters["sqrt_beta_t"][:, i].reshape(-1, 1, 1, 1) * z
-        )
-
+            # 125, 1, 28, 28
+            # parameters : 125, 1 -> 125, 1, 1, 1
+            xt = (
+                parameters["oneover_sqrta"][:, i].view(-1, 1, 1, 1)
+                * (xt - vt_eps * parameters["mab_over_sqrtmab"][:, i].view(-1, 1, 1, 1))
+                + parameters["sqrt_beta_t"][:, i].view(-1, 1, 1, 1) * z
+            )
+    
     return xt
 
 # # # Generate images

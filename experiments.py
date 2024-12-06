@@ -134,7 +134,7 @@ class CSVDataset(Dataset):
         # Return the data point and its corresponding parameter t value
         item = {
             "input_noise": torch.tensor(self.input_noise[idx], dtype=torch.float32),
-            "output_generation": torch.tensor(self.target_generation[idx], dtype=torch.float32).reshape(1, 28, 28)
+            "output_generation": torch.tensor(self.target_generation[idx], dtype=torch.float32)#.reshape(1, 28, 28)
         }
         if self.conditional:
             item["condition_label"] = torch.tensor(self.class_label[idx], dtype=torch.int64)
@@ -529,6 +529,8 @@ if __name__ == "__main__":
             diffusion_model=SpiralDiffusionModel.load_from_checkpoint(args.SpiralDiffusionModel),
         )
         exit()
+    
+    torch.cuda.empty_cache()
 
     train_time_model(
         # "model_files6/toy_model-epoch=1999.ckpt"
