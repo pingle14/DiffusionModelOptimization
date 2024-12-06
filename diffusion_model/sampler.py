@@ -1,5 +1,6 @@
 import os
 import torch
+import torch.distributed
 import torch.nn as nn
 import numpy as np
 from torchvision.utils import save_image
@@ -10,15 +11,15 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 # rom pretrained import PretrainedConvModel
-# from lightning_3 import DiffusionModel
-from diffusion_model.spiral_model import DiffusionModel
+# from lightning_3 import SpiralDiffusionModel
+from diffusion_model.spiral_model import SpiralDiffusionModel
 import matplotlib.pyplot as plt
 import pandas as pd
 
 """# # Load the model
 checkpoint_path = "../model_files6/toy_model-epoch=9999.ckpt"  #'/scratch/aadarshnarayan/models/pokemon_model-epoch=499.ckpt'
 # #'models/pokemon_model-epoch=9999.ckpt'  # Update with your actual checkpoint path
-model = DiffusionModel.load_from_checkpoint(checkpoint_path)
+model = SpiralDiffusionModel.load_from_checkpoint(checkpoint_path)
 model.eval()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)"""
@@ -43,8 +44,6 @@ def euler_sampler(
     device="cuda",
     guide_w=None,
     c_t=None,
-    context_mask=None,
-    size=None,
 ):
     xtraj = [xt.clone()]
 
@@ -79,7 +78,7 @@ def ddpm_schedules_nonuniform(beta1, beta2, time_jumps):
     assert beta1 < beta2 < 1.0, "beta1 and beta2 must be in (0, 1)"
 
     # Ensure time_jumps is a tensor
-    time_jumps = torch.tensor(time_jumps, dtype=torch.float32)
+    #time_jumps = torch.tensor(time_jumps, dtype=torch.float32)
 
     # Normalize the time_jumps to the range [0, 1]
     # Assuming time_jumps are in a range [0, T] where T is the largest value in time_jumps.
@@ -120,13 +119,14 @@ output_generations = self.sampler_fn(
 
 """
 def mnist_sampler(
-    model, x_t, time_jumps=[], device="cuda", guide_w=2.0, c_t=None
+    model, xt, time_jumps=[], device="cuda", guide_w=2.0, c_t=None
 ):
-    n_sample = x_t.shape[0]
+    n_sample = xt.shape[0]
     num_time_jumps = time_jumps.shape[1]
     beta1, beta2 = MNIST_BETAS # Hardcoded betas
     size = MNIST_IMG_SZ # Hardcoded
-
+    time_jumps = time_jumps.flip(dims=[1])
+    # reversed(time_jumps) #TODO: CHeck
     parameters = ddpm_schedules_nonuniform(beta1, beta2, time_jumps)
 
     """
@@ -134,39 +134,41 @@ def mnist_sampler(
     The second half of the batch is set to context-free by setting the second half of context_mask to 1.
     TEHCNIQUE: classifier-free guidance: half of the batch is conditioned and the other half is not
     """
-    c_t = c_t.repeat(2)
     context_mask = torch.zeros_like(c_t).to(device)
+    c_t = c_t.repeat(2)
     context_mask = context_mask.repeat(2)
     context_mask[n_sample:] = 1.0  # makes second half of batch context free
-
-    # MNIST TIMESTEPS are backwards!: self.n_Timesteps, 0, -1
+    xt = xt.reshape(xt.shape[0], 1, 28, 28)
+    # MNIST TIMESTEPS are backwards!: self.n_Timesteps, 0, -
     for i in range(num_time_jumps):  
         # NOTE: when we use our own timesteps, we simply modify this line here, to use our generated timesteps
         # NOTE: Default: [i / self.n_Timesteps]
-        t_is = torch.tensor(time_jumps[:, i].unsqueeze(-1))
-        t_is = t_is.repeat(n_sample, 1, 1, 1)
+        t_is = time_jumps[:, i].reshape(time_jumps.shape[0], 1, 1, 1)
+        #t_is = t_is.repeat(1, 1, 1, 1) 
 
         # double batch
-        x_t = x_t.repeat(2, 1, 1, 1)
+        xt = xt.repeat(2, 1, 1, 1)
         t_is = t_is.repeat(2, 1, 1, 1)
 
         # Brownian motion
         z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
-
-        # split predictions and compute weighting
-        vt_eps = model(x_t, c_t, t_is, context_mask)
+        vt_eps = model.nn_model(xt, c_t, t_is, context_mask)
+        
         vt_eps1 = vt_eps[:n_sample]
         vt_eps2 = vt_eps[n_sample:]
         # Classifier-Free guidance: 
         vt_eps = (1 + guide_w) * vt_eps1 - guide_w * vt_eps2
-        x_t = x_t[:n_sample]
-        x_t = (
-            parameters["oneover_sqrta"][i]
-            * (x_t - vt_eps * parameters["mab_over_sqrtmab"][i])
-            + parameters["sqrt_beta_t"][i] * z
+        xt = xt[:n_sample]
+
+        # 125, 1, 28, 28
+        # parameters : 125, 1 -> 125, 1, 1, 1
+        xt = (
+            parameters["oneover_sqrta"][:, i].reshape(-1, 1, 1, 1)
+            * (xt - vt_eps * parameters["mab_over_sqrtmab"][:, i].reshape(-1, 1, 1, 1))
+            + parameters["sqrt_beta_t"][:, i].reshape(-1, 1, 1, 1) * z
         )
 
-    return x_t
+    return xt
 
 # # # Generate images
 """num_samples = 10000  # Adjust as needed

@@ -373,7 +373,7 @@ class LitSampler(pl.LightningModule):
         noise = predictions['input_noise'][0]
         gen = predictions['x_i_gen']
 
-        data = torch.cat([noise, gen], dim=1)
+        data = torch.cat([noise, gen, c_i], dim=1)
 
         return data
 
@@ -459,7 +459,7 @@ def test_mnist(save_dir):
     
 
     # Define the number of samples and their size
-    n_sample = 10000  # Number of samples
+    n_sample = 10  # Number of samples
     size = (1, 28, 28)  # Example size: (channels, height, width)
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -487,100 +487,7 @@ def test_mnist(save_dir):
     #print(f"Rank: {dist.get_rank()}")
     torch.save(data, f'output_{dist.get_rank()}.file')
 
-    """gathered_predictions = [torch.zeros_like(data).to('cuda') for _ in range(dist.get_world_size())]
-    dist.all_gather(gathered_predictions, data)
-
-    if dist.get_rank() == 0:
-            print('hello, world! my rank is 0')
-            all_data = torch.cat(gathered_predictions, dim=0)
-            print('all data!')
-            print(type(all_data))
-            torch.save(all_data, 'output.file')
-            #print(all_data)
-            df = pd.DataFrame(all_data.to('cpu').numpy())
-            print('df!!!')
-            df.to_csv("outputs.csv")
-            print('made csv')
-    dist.barrier()"""
-
-    #if stuff is not None:
-    #    print("Final predictions shape:", type(stuff))
-    """
-    print(type(stuff))
-    print("len of stuff", len(stuff))
-    stuff = stuff[0]
-    print("len of stuff 2", len(stuff))
-    # # types: list          tuple              list                 Tensor
-    # print(type(stuff), type(stuff[0]), type(stuff[0][0]), type(stuff[0][0][0]))
-    input_noise = stuff['input_noise']
-    x_gen = stuff['x_i_gen']
-    print(type(input_noise))
-    print(len(input_noise))
-    print(type(x_gen), x_gen.shape)
-    
-    x_gen = x_gen.cpu().numpy()
-    gen = pd.DataFrame(x_gen)
-    noise = input_noise[-1].cpu().numpy()
-    noise = pd.DataFrame(noise)
-
-    df = pd.concat([noise, gen], axis=1)
-    df.columns = [f'Z_{i}' for i in range(input_noise.shape[1])] + [f'X_{i}' for i in range(input_noise.shape[1])]
-    df.to_csv('NEW_mnist_inferences.csv', index=False)"""
-
-    #noise = pd.DataFrame(input_noise)
-    #gen = pd.DataFrame(x_gen)
-    
-    #df = pd.concat([noise, gen], axis=1)
-    #df.columns = [f'Z_{i}' for i in range(input_noise.shape[1])] + [f'X_{i}' for i in range(input_noise.shape[1])]
-    #df.to_csv('NEW_mnist_inferences.csv', index=False)
-
-    # Use the sampling function directly
-    #results = lit_sampler.sample(n_sample, size, guide_w=0.5)
-
-    """ddpm_module = DDPM_Lightning_Module(ddpm)
-    trainer = pl.Trainer(
-        max_epochs=1,
-        accelerator='gpu',
-        devices=1,
-        precision='16-mixed',  # Updated precision
-        num_nodes=1,
-    )
-    trainer.test(ddpm_module)"""
-    """ep = "test"
-    ddpm.eval()
-    print(len(dataset))
-    with torch.no_grad():
-        n_sample = 10000
-        # disable in sample the code that saves stuff to x_gen_store!!!!
-        input_noise, x_gen, _ = ddpm.sample(n_sample, (1, 28, 28), device, guide_w=guidance_wieght, enable_store=False)
-        # and then flatten x_gen, so that its dimensions are n_sample x (everything else)
-        # and then save to a csv.
-        x_gen_data = x_gen.flatten(start_dim=1)
-        print(x_gen_data.shape)
-
-        x_all = x_gen
-        grid = make_grid(x_all*-1 + 1, nrow=10)
-        save_image(grid, save_dir + f"image_ep{ep}_w{w}.png")
-        print('saved image at ' + save_dir + f"image_ep{ep}_w{w}.png")
-        
-        # create gif of images evolving over time, based on x_gen_store
-        fig, axs = plt.subplots(nrows=int(n_sample/n_classes), ncols=n_classes,sharex=True,sharey=True,figsize=(8,3))
-        def animate_diff(i, x_gen_store):
-            print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
-            plots = []
-            for row in range(int(n_sample/n_classes)):
-                for col in range(n_classes):
-                    axs[row, col].clear()
-                    axs[row, col].set_xticks([])
-                    axs[row, col].set_yticks([])
-                    # plots.append(axs[row, col].imshow(x_gen_store[i,(row*n_classes)+col,0],cmap='gray'))
-                    plots.append(axs[row, col].imshow(-x_gen_store[i,(row*n_classes)+col,0],cmap='gray',vmin=(-x_gen_store[i]).min(), vmax=(-x_gen_store[i]).max()))
-            return plots
-        ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-        ani.save(save_dir + f"gif_ep{ep}_w{w}.gif", dpi=100, writer=PillowWriter(fps=5))
-        print('saved image at ' + save_dir + f"gif_ep{ep}_w{w}.gif")"""
-
-
+ 
 if __name__ == "__main__":
     #if not dist.is_initialized():
     #   dist.init_process_group(backend="nccl" if torch.cuda.is_available() else "gloo")

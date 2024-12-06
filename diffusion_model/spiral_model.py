@@ -52,9 +52,9 @@ class FlowModel(nn.Module):
 
 # Represents the external parts of the diffusion model
 
-class DiffusionModel(pl.LightningModule):
+class SpiralDiffusionModel(pl.LightningModule):
     def __init__(self, model_size='small', learning_rate=1e-4, num_noise_samples=1, loss_type='mse', layers=[1024, 1024, 1024], total_epochs=10000, print_debug=False):
-        super(DiffusionModel, self).__init__()
+        super(SpiralDiffusionModel, self).__init__()
         self.layers = layers
         self.model = FlowModel(layers=layers, data_dimensions=data_dimensions)
         self.learning_rate = learning_rate
@@ -122,8 +122,8 @@ if __name__ == '__main__':
 
     # Instantiate the model, data module, and trainer
     checkpoint_path = '../model_files5/toy_model-epoch=4999.ckpt'
-    model = DiffusionModel.load_from_checkpoint(checkpoint_path)
-    #model = DiffusionModel(model_size=config['model_size'], layers=config['layers'], learning_rate=config['learning_rate'], loss_type=config['loss_type'], total_epochs=config['num_epochs'], print_debug=config['print_debug'])
+    model = SpiralDiffusionModel.load_from_checkpoint(checkpoint_path)
+    #model = SpiralDiffusionModel(model_size=config['model_size'], layers=config['layers'], learning_rate=config['learning_rate'], loss_type=config['loss_type'], total_epochs=config['num_epochs'], print_debug=config['print_debug'])
     data_module = ToyDataModule(csv_file=config['csv_file'], batch_size=config['batch_size'], dimension=data_dimensions, n_samples=80000)
 
     checkpoint_callback = ModelCheckpoint(
