@@ -13,7 +13,7 @@ from torch.amp import autocast, GradScaler
 from pytorch_lightning.callbacks import ModelCheckpoint
 import matplotlib.pyplot as plt
 from collections import namedtuple
-from diffusion_model.dataset import ToyDataset, ToyDataModule
+from .dataset import ToyDataModule
 #from sampler import euler_sampler
 
 # Create Diffusion Model, with training and inference functions
@@ -41,11 +41,12 @@ class FlowModel(nn.Module):
 
     def forward(self, x, t):
         #print(x.size())
-        batch_size = x.size()[0]
+        #batch_size = x.size()[0]
         #reshaped_x = x.reshape(batch_size, self.img_size * self.img_size *3)
         #print(reshaped_x.size())
         #print(t.size())
-        combined = torch.cat([x, t], dim=1)
+        #print(x.shape, t.shape)
+        combined = torch.cat([x, t], dim=1) #torch.tensor([t[0]], device='cuda')
         #print(combined.size())
         output = self.seq(combined)
         return output

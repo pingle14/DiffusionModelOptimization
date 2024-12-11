@@ -122,8 +122,8 @@ class CSVDataset(Dataset):
             df.drop(columns=['Unnamed: 0'], inplace=True)
         self.dims = dims
         self.conditional = conditional_col in df.columns
-        self.input_noise = np.array(df[[f"Z{i}" for i in range(self.dims)]])
-        self.target_generation = np.array(df[[f"X{i}" for i in range(self.dims)]])
+        self.input_noise = np.array(df[[f"X{i}" for i in range(self.dims)]])
+        self.target_generation = np.array(df[[f"Z{i}" for i in range(self.dims)]])
         self.class_label = np.array(df["C"]) if self.conditional else None
         self.n_samples = len(self.input_noise)
 
@@ -303,20 +303,24 @@ class TimseStepSelectorModule(pl.LightningModule):
             # Input tensor as numpy
             input_data = input_noise[i].cpu().numpy()
             # Predicted tensor as numpy
-            predicted_data = output_generations[i].cpu().numpy()
+            predicted_data = output_generations[i].cpu().flatten().numpy()
             # Target tensor as numpy
-            target_data = target_generations[i].cpu().numpy()
-
+            target_data = target_generations[i].cpu().flatten().numpy()
+            # Time steps
+            time_steps = output_timejumps[i].cpu().flatten().numpy()
+            
             item = {
                 **{
                     f"input_{j}": input_data[j] for j in range(len(input_data))
                 },  # Each element in input_noise
                 **{
-                    f"predicted_{j}": predicted_data[j]
-                    for j in range(len(predicted_data))
+                    f"predicted_{j}": predicted_data[j] for j in range(predicted_data.shape[0])
                 },  # Each element in output_generations
                 **{
-                    f"target_{j}": target_data[j] for j in range(len(target_data))
+                    f"target_{j}": target_data[j] for j in range(target_data.shape[0])
+                },  # Each element in target_generations
+                **{
+                    f"t_{j}": time_steps[j] for j in range(time_steps.shape[0])
                 },  # Each element in target_generations
             }
 
@@ -395,8 +399,11 @@ def train_time_model(
             label_dim=label_dim,
             input_size=dims
         )
+        diffusion_model.model.eval()
     else:
         model = TimseStepSelectorModule.load_from_checkpoint(existing_time_model)
+
+    model.eval()
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=time_model_directory,  # Directory to save the models
@@ -419,10 +426,13 @@ def train_time_model(
     trainer.fit(model, datamodule=data_module)
 
 
-def visualize_model(data_module, time_model_path, diffusion_model):
+def visualize_model(data_module, time_model_path, diffusion_model, inference_results_path, sample_fn):
     # TODO: Ok to load from this checkpoint? Will it know the Diffusion Model?
     time_model = TimseStepSelectorModule.load_from_checkpoint(
-        time_model_path, **{"diffusion_model": diffusion_model}
+        time_model_path, **{"diffusion_model": diffusion_model, "inference_results_path": inference_results_path,
+              "sampler_fn": euler_sampler              }
+        #"sampler_fn": mnist_sampler, "label_dim":1,
+        #"input_size":784,}
     )
 
     # Initialize the PyTorch Lightning Trainer
@@ -520,13 +530,26 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # CSV: "diffusion_model/data.csv"
-    data_module = CSVDataModule(csv_file=args.csvFile, dims=args.dims, batch_size=8)
+    data_module = CSVDataModule(csv_file=args.csvFile, dims=args.dims, batch_size=1000)
 
     if args.visualize:
+        #model_type = SpiralDiffusionModel  else LitSampler
+        if args.sampler == "spiral":
+            diffusion_model=SpiralDiffusionModel.load_from_checkpoint(args.SpiralDiffusionModel)
+        else:
+            n_Timesteps = 400 # 500
+            device = "cuda"
+            n_classes = 10
+            n_feat = 128 # 128 ok, 256 better (but slower)
+            guidance_wieght = 2.0
+            diffusion_model = DDPM(nn_model=ContextUnet(in_channels=1, n_feat=n_feat, n_classes=n_classes), betas=(1e-4, 0.02), n_Timesteps=n_Timesteps, device=device, drop_prob=0.1)
+            diffusion_model.load_state_dict(torch.load(args.SpiralDiffusionModel))
         visualize_model(
             data_module=data_module,
             time_model_path=args.timeModel,
-            diffusion_model=SpiralDiffusionModel.load_from_checkpoint(args.SpiralDiffusionModel),
+            diffusion_model=diffusion_model,
+            inference_results_path=args.inferenceResultsPath,
+            sample_fn=args.sampler
         )
         exit()
     
