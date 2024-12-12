@@ -134,7 +134,7 @@ def compute_forward_mean_std(model, X, timesteps, device="cuda"):
 # ELBO calculation for a given timestep
 def compute_elbo_for_timestep(
     target_data,
-    vt,
+    xt,
     forward_mean,
     forward_std,
 ):
@@ -153,7 +153,7 @@ def compute_elbo_for_timestep(
         elbo_t: The ELBO at this timestep
     """
     # Reverse process: get the model's prediction for the clean data at this timestep
-    predicted_reversed = vt #euler_sample_step(model, target_data, timestep_indx, timesteps)
+    predicted_reversed = xt #euler_sample_step(model, target_data, timestep_indx, timesteps)
 
     # Compute the log-likelihood of the predicted data under the reverse process (simple Gaussian likelihood)
     log_likelihood = -0.5 * np.sum(
