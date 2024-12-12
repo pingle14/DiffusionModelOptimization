@@ -244,6 +244,9 @@ class DDPM(nn.Module):
         self.drop_prob = drop_prob
         self.loss_mse = nn.MSELoss()
 
+    def get_model(self):
+        return self.nn_model
+
     def forward(self, x, c):
         """
         this method is used in training, so samples t and noise randomly

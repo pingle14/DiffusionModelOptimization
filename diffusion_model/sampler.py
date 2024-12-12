@@ -24,8 +24,8 @@ model.eval()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)"""
 
-MNIST_BETAS = 1e-4, 0.02 # Hardcoded betas
-MNIST_IMG_SZ = (1, 28, 28) # Hardcoded
+MNIST_BETAS = 1e-4, 0.02  # Hardcoded betas
+MNIST_IMG_SZ = (1, 28, 28)  # Hardcoded
 
 
 def generative_denoising_timestep_order(timesteps):
@@ -34,6 +34,25 @@ def generative_denoising_timestep_order(timesteps):
 
 def noising_timestep_order(timesteps):
     return timesteps
+
+
+def euler_sample_step(model, xt, i, time_jumps, device='cuda'):
+    # Time variable t decreases from 1 to 0
+    num_time_jumps = time_jumps.shape[1]
+    step_t = time_jumps[:, i].unsqueeze(-1)
+
+    t = step_t
+    #print("step t shape", step_t.shape)
+    # print(t.shape) #TODO: Handle non-tensor case with : torch.full((xt.shape[0], 1), fill_value=step, device=device)
+    all_ones = torch.ones_like(step_t, device=device)
+    step_size = (
+        time_jumps[:, i + 1].unsqueeze(-1) if i < num_time_jumps - 1 else all_ones
+    ) - step_t
+
+    v_t = model(xt, t)
+    # Update xt using Euler method
+    xt = xt + step_size * v_t
+    return xt
 
 
 # Euler sampling function
@@ -50,22 +69,7 @@ def euler_sampler(
     with torch.no_grad():
         num_time_jumps = time_jumps.shape[1]
         for i in range(num_time_jumps):
-            # Time variable t decreases from 1 to 0
-            step_t = time_jumps[:, i].unsqueeze(-1)
-
-            t = step_t
-            # print(t.shape) #TODO: Handle non-tensor case with : torch.full((xt.shape[0], 1), fill_value=step, device=device)
-            all_ones = torch.ones_like(step_t, device=device)
-            step_size = (
-                time_jumps[:, i + 1].unsqueeze(-1)
-                if i < num_time_jumps - 1
-                else all_ones
-            ) - step_t
-
-            v_t = model(xt, t)
-            # Update xt using Euler method
-            xt = xt + step_size * v_t
-
+            xt = euler_sample_step(model, xt, i, time_jumps, device)
             xtraj.append(xt.clone().detach())
 
     return xt
@@ -78,7 +82,7 @@ def ddpm_schedules_nonuniform(beta1, beta2, time_jumps):
     assert beta1 < beta2 < 1.0, "beta1 and beta2 must be in (0, 1)"
 
     # Ensure time_jumps is a tensor
-    #time_jumps = torch.tensor(time_jumps, dtype=torch.float32)
+    # time_jumps = torch.tensor(time_jumps, dtype=torch.float32)
 
     # Normalize the time_jumps to the range [0, 1]
     # Assuming time_jumps are in a range [0, T] where T is the largest value in time_jumps.
@@ -107,6 +111,7 @@ def ddpm_schedules_nonuniform(beta1, beta2, time_jumps):
         "mab_over_sqrtmab": mab_over_sqrtmab_inv,  # (1-\alpha_t)/\sqrt{1-\bar{\alpha_t}}
     }
 
+
 """
 output_generations = self.sampler_fn(
                 self.diffusion_model,
@@ -118,14 +123,14 @@ output_generations = self.sampler_fn(
             )
 
 """
-def mnist_sampler(
-    model, xt, time_jumps=[], device="cuda", guide_w=2.0, c_t=None
-):
+
+
+def mnist_sampler(model, xt, time_jumps=[], device="cuda", guide_w=2.0, c_t=None):
     with torch.no_grad():
         n_sample = xt.shape[0]
         num_time_jumps = time_jumps.shape[1]
-        beta1, beta2 = MNIST_BETAS # Hardcoded betas
-        size = MNIST_IMG_SZ # Hardcoded
+        beta1, beta2 = MNIST_BETAS  # Hardcoded betas
+        size = MNIST_IMG_SZ  # Hardcoded
         time_jumps = time_jumps.flip(dims=[1])
         # reversed(time_jumps) #TODO: CHeck
         parameters = ddpm_schedules_nonuniform(beta1, beta2, time_jumps)
@@ -141,11 +146,11 @@ def mnist_sampler(
         context_mask[n_sample:] = 1.0  # makes second half of batch context free
         xt = xt.view(xt.shape[0], 1, 28, 28)
         # MNIST TIMESTEPS are backwards!: self.n_Timesteps, 0, -
-        for i in range(num_time_jumps):  
+        for i in range(num_time_jumps):
             # NOTE: when we use our own timesteps, we simply modify this line here, to use our generated timesteps
             # NOTE: Default: [i / self.n_Timesteps]
             t_is = time_jumps[:, i].view(time_jumps.shape[0], 1, 1, 1)
-            #t_is = t_is.repeat(1, 1, 1, 1) 
+            # t_is = t_is.repeat(1, 1, 1, 1)
 
             # double batch
             xt = xt.repeat(2, 1, 1, 1)
@@ -154,10 +159,10 @@ def mnist_sampler(
             # Brownian motion
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
             vt_eps = model.nn_model(xt, c_t, t_is, context_mask)
-            
+
             vt_eps1 = vt_eps[:n_sample]
             vt_eps2 = vt_eps[n_sample:]
-            # Classifier-Free guidance: 
+            # Classifier-Free guidance:
             vt_eps = (1 + guide_w) * vt_eps1 - guide_w * vt_eps2
             xt = xt[:n_sample]
 
@@ -168,8 +173,10 @@ def mnist_sampler(
                 * (xt - vt_eps * parameters["mab_over_sqrtmab"][:, i].view(-1, 1, 1, 1))
                 + parameters["sqrt_beta_t"][:, i].view(-1, 1, 1, 1) * z
             )
-    
+            #print(type(xt))
+
     return xt
+
 
 # # # Generate images
 """num_samples = 10000  # Adjust as needed
