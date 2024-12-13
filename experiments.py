@@ -85,139 +85,46 @@ class GaussianNoiseNN(nn.Module):
         return sorted_x
 
 
-# Define the KL divergence for two distributions (P and Q)
-def kl_divergence(P, Q):
-    """
-    Calculate the KL divergence between two distributions.
-    Args:
-        P: True distribution (forward process)
-        Q: Predicted distribution (reverse process)
-    """
-    # Prevent division by zero or log of zero
-    P = np.clip(P, 1e-10, 1)
-    Q = np.clip(Q, 1e-10, 1)
-    return np.sum(P * np.log(P / Q))
+# Define the objective function f(X, t) (you can modify this) 
+'''
+t_{i-1} = 0.2
+t_i = 0.5
+
+slope(v_0.5, v_0.50001)
+'''
+def approx_acceleration(vt_model, input_noise, target_generation, t, step=0.0001):
+    # Spiral Model: Xt = t * batch + (1 - t) * noise
+    X = t * target_generation + (1-t) * input_noise
+    vt = vt_model(X, t)
+    vth = vt_model(X, t - step)
+    return torch.abs((vt - vth) / step)
+
+def plot_acceleration(vt_model, input_noise, target_generation):
+    accelerations = {}
+    for i in range(1000):
+        t = torch.ones([input_noise.shape[0], 1], device='cuda') * (i/1000.0)
+        acc = approx_acceleration(vt_model, input_noise, target_generation, t).norm()
+        accelerations[i] = acc.cpu().numpy()
+    # print(f'accelerations_dict: {accelerations}')
+    return accelerations
+    
 
 
-def compute_forward_mean_std(model, X, timesteps, device="cuda"):
-    """
-    Compute forward mean and std based on the neural network's predictions for each timestep.
-    The forward mean is typically 0, but forward std is learned from the model.
+# # Objective function to maximize (sum of f(X, t_k))
+def objective(timejumps, vt_model, input_noises, target_generations): 
+    # 125x2
+    # (125*20)x2
+    input_noises = input_noises.repeat_interleave(timejumps.shape[1], dim=0)
+    # input noises has {x1, x2, x3, ...} -> {x1, x1, ... <timejumps.shape[1] times> x1, x2, x2 , .. etc}
+    # {x1, x2, x3, ...} -> {x1, x2, ... xn <timejumps.shape[1] times>}
+    target_generations = target_generations.repeat_interleave(timejumps.shape[1], dim=0)
+    timejumps = timejumps.view(-1, 1)
 
-    Args:
-        X: Input data
-        timesteps: A tensor or list of timesteps
-
-    Returns:
-        forward_mean: List of forward means (usually 0)
-        forward_std: List of forward stds for each timestep (learned from the model)
-    """
-    forward_mean = np.zeros(len(timesteps))  # Mean is usually zero
-    forward_std = []
-
-    for t in timesteps:
-        # Create a tensor for the timestep, reshaped to match the input
-        t_tensor = torch.full((X.size(0), 1), t, device=device)
-
-        # Get the model's prediction (this is where you estimate the noise std)
-        vt = model(X, t_tensor)
-
-        # The forward std is related to the magnitude of the velocity
-        # We take the L2 norm of the velocity (this gives us an approximation of the noise level)
-        std = torch.norm(vt, dim=1).cpu().numpy()  # Use L2 norm as std approximation
-        forward_std.append(std)
-
-    forward_std = np.array(forward_std)
-    return forward_mean, forward_std
-
-
-# ELBO calculation for a given timestep
-def compute_elbo_for_timestep(
-    target_data,
-    xt,
-    forward_mean,
-    forward_std,
-):
-    """
-    Compute the ELBO for a given timestep.
-
-    Args:
-        target_data: The clean data or the noisy data (depending on the timestep)
-        predicted_data: The denoised data predicted by the reverse process
-        model: The trained reverse diffusion model
-        timestep: The current timestep
-        forward_mean: The mean of the noise added at this timestep (forward process)
-        forward_std: The standard deviation of the noise at this timestep (forward process)
-
-    Returns:
-        elbo_t: The ELBO at this timestep
-    """
-    # Reverse process: get the model's prediction for the clean data at this timestep
-    predicted_reversed = xt #euler_sample_step(model, target_data, timestep_indx, timesteps)
-
-    # Compute the log-likelihood of the predicted data under the reverse process (simple Gaussian likelihood)
-    log_likelihood = -0.5 * np.sum(
-        ((predicted_reversed - target_data) ** 2) / forward_std**2
-    )
-
-    # Compute KL divergence term
-    kl_div = kl_divergence(forward_mean, predicted_reversed)
-
-    # Compute ELBO for this timestep
-    elbo_t = log_likelihood - kl_div
-    return elbo_t
-
-
-# Compute the overall ELBO by summing the ELBOs over all timesteps
-def compute_overall_elbo(
-    target_data,
-    predicted_data,
-    model,
-    timesteps,
-):
-    """
-    Compute the overall ELBO by summing the ELBO for each timestep.
-
-    Args:
-        target_data: A list of target data for each timestep
-        predicted_data: A list of predicted (denoised) data for each timestep
-        forward_process_means: A list of means for each timestep in the forward process
-        forward_process_stds: A list of standard deviations for each timestep in the forward process
-        model: The trained reverse process model
-        timesteps: A list of timesteps
-
-    Returns:
-        overall_elbo: The overall ELBO
-
-        # Get the model's prediction (this is where you estimate the noise std)
-        vt =
-
-        # The forward std is related to the magnitude of the velocity
-        # We take the L2 norm of the velocity (this gives us an approximation of the noise level)
-        std = torch.norm(vt, dim=1).cpu().numpy()
-    """
-    overall_elbo = 0
-    for i in range(timesteps.shape[1]):
-        # Compute the ELBO for this timestep
-        vt = model(target_data, timesteps[:, i].unsqueeze(-1))
-        all_ones = torch.ones_like(timesteps[:, i].unsqueeze(-1), device=device)
-        step_size = (
-            timesteps[:, i + 1].unsqueeze(-1) if i < timesteps.shape[1] - 1 else all_ones
-        ) - timesteps[:, i].unsqueeze(-1) 
-        xt = target_data + vt * step_size
-        elbo_t = compute_elbo_for_timestep(
-            target_data,
-            xt,
-            #predicted_data[t],
-            #model,
-            #i,
-            #timesteps[:, i].unsqueeze(-1),
-            forward_mean=0,
-            forward_std=torch.norm(vt, dim=1),  # Use L2 norm as std approximation
-        )
-        overall_elbo += elbo_t
-
-    return overall_elbo
+    #print(f'input noise: {input_noises}, target gen: {target_generations}, timejumps: {timejumps}')
+    accelerations = approx_acceleration(vt_model, input_noises, target_generations, timejumps)
+    #print(f'accelerations: {accelerations}')
+    # Calculate f(X, t_k) for each t_k and return the negative sum (since we are maximizing)
+    return -torch.sum(accelerations)
 
 
 # Custom loss function
@@ -228,37 +135,31 @@ class TimestepLoss(nn.Module):
         self.beta = beta  # Controls importance of actual objective function
         self.gamma = gamma
 
-    def forward(self, model, output_timejumps, output_generation, target_generation):
+    def forward(self, diffusion_model, input_noise, output_timejumps, output_generation=None, target_generation=None):
         # # Loss 1: Penalize outputs that are outside the [0, 1] range (just as a safety check)
         # range_loss = torch.sum(
         #     torch.clamp(output_timejumps, min=0.0, max=1.0) - output_timejumps
         # )
-
+        temp = 10000
         # Loss 2: Penalize if the values are too close to each other (distinctness penalty)
         # Compute pairwise differences between outputs
         pairwise_diff = torch.triu(
             torch.abs(output_timejumps[:, None] - output_timejumps), diagonal=1
         )
         distinctness_loss = torch.sum(
-            torch.exp(-pairwise_diff)
+            torch.exp(-pairwise_diff/temp)
         )  # Penalize small differences
-        #print(type(output_generation))
+
         # Loss 3: Actual Objective Function
-        output_generation = output_generation.reshape(output_generation.shape[0], -1)
-        adjusted_mse = F.mse_loss(output_generation, target_generation)
+        # output_generation = output_generation.reshape(output_generation.shape[0], -1)
+        # adjusted_mse = F.mse_loss(output_generation, target_generation)
 
-        elbo = compute_overall_elbo(
-            target_generation,
-            output_generation,
-            model,
-            output_timejumps,
-        )
-
+        total_neg_acceleration = objective(output_timejumps, diffusion_model, input_noise, target_generation)
         # Final custom loss: combine all components with respective weights
         loss = (
             self.alpha * distinctness_loss
-            + self.beta * adjusted_mse
-            + self.gamma * elbo
+            # + self.beta * adjusted_mse
+            + self.gamma * total_neg_acceleration
         )  # + range_loss
         return loss
 
@@ -362,7 +263,7 @@ class TimseStepSelectorModule(pl.LightningModule):
         label_dim=0,
         input_size=2,
         output_ntimejumps=20,
-        loss_fn=TimestepLoss(alpha=0.0, beta=0.5, gamma=0.5),
+        loss_fn=TimestepLoss(alpha=0.2, beta=0.0, gamma=0.8),
         learning_rate=1e-5,
     ):
         super(TimseStepSelectorModule, self).__init__()
@@ -394,17 +295,18 @@ class TimseStepSelectorModule(pl.LightningModule):
             condition_label = batch.get("condition_label", None)
             output_timejumps = self.model(input_noise, condition_label)
             #print("trainstep timstep data shape", output_timejumps.shape)
-            output_generations = self.sampler_fn(
-                model=self.diffusion_model,
-                xt=input_noise,
-                time_jumps=output_timejumps,
-                device=device,
-                c_t=condition_label,
-            )
+            # output_generations = self.sampler_fn(
+            #    model=self.diffusion_model,
+            #    xt=input_noise,
+            #    time_jumps=output_timejumps,
+            #    device=device,
+            #    c_t=condition_label,
+            # )
             loss = self.loss_fn(
-                model=self.diffusion_model, 
+                diffusion_model=self.diffusion_model, 
+                input_noise=input_noise,
                 output_timejumps=output_timejumps, 
-                output_generation=output_generations, 
+                output_generation=None, 
                 target_generation=target_generations
             )
 
@@ -420,18 +322,19 @@ class TimseStepSelectorModule(pl.LightningModule):
             target_generations = batch["output_generation"]
             condition_label = batch.get("condition_label", None)
             output_timejumps = self.model(input_noise, condition_label)
-            print("valstep timstep data shape", output_timejumps.shape)
-            output_generations = self.sampler_fn(
+            #print("valstep timstep data shape", output_timejumps.shape)
+            """output_generations = self.sampler_fn(
                 self.diffusion_model,
                 xt=input_noise,
                 time_jumps=output_timejumps,
                 device=device,
                 c_t=condition_label,
-            )
+            )"""
             loss = self.loss_fn(
-                model=self.diffusion_model, 
+                diffusion_model=self.diffusion_model, 
+                input_noise=input_noise,
                 output_timejumps=output_timejumps, 
-                output_generation=output_generations, 
+                output_generation=None,#output_generations, 
                 target_generation=target_generations
             )
 
@@ -454,9 +357,10 @@ class TimseStepSelectorModule(pl.LightningModule):
                 c_t=condition_label,
             )
             loss = self.loss_fn(
-                model=self.diffusion_model, 
+                diffusion_model=self.diffusion_model, 
+                input_noise=input_noise,
                 output_timejumps=output_timejumps, 
-                output_generation=output_generations, 
+                output_generation=None,#output_generations, 
                 target_generation=target_generations
             )
 
@@ -465,7 +369,7 @@ class TimseStepSelectorModule(pl.LightningModule):
         self.log("test_loss", self.test_loss, prog_bar=True)
         # Collect the data from the current batch
         batch_size = input_noise.size(0)
-
+        running_acc = []
         for i in range(batch_size):
             # Flattening each of the tensors to single lists of values
             # Input tensor as numpy
@@ -498,7 +402,11 @@ class TimseStepSelectorModule(pl.LightningModule):
 
             # Add each example's data to the results list
             self.inference_results.append(item)
-
+            df = plot_acceleration(self.diffusion_model, input_noise, target_generations)
+            running_acc += [df]
+            # print(running_acc)
+        running_acc = pd.DataFrame(running_acc)
+        running_acc.to_csv('acceleration_plots.csv', index=False)
         return loss
 
     def on_test_end(self):
@@ -605,9 +513,9 @@ def visualize_model(data_module, time_model_path, diffusion_model, inference_res
     # TODO: Ok to load from this checkpoint? Will it know the Diffusion Model?
     time_model = TimseStepSelectorModule.load_from_checkpoint(
         time_model_path, **{"diffusion_model": diffusion_model, "inference_results_path": inference_results_path,
-              #"sampler_fn": euler_sampler              }
-        "sampler_fn": mnist_sampler, "label_dim":1,
-        "input_size":784,}
+              "sampler_fn": sampler_fns[sample_fn]              }
+        #"sampler_fn": mnist_sampler, "label_dim":1,
+        #"input_size":784,}
     )
 
     # Initialize the PyTorch Lightning Trainer
@@ -705,7 +613,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # CSV: "diffusion_model/data.csv"
-    data_module = CSVDataModule(csv_file=args.csvFile, dims=args.dims, batch_size=100)
+    data_module = CSVDataModule(csv_file=args.csvFile, dims=args.dims, batch_size=1000)
 
     if args.visualize:
         #model_type = SpiralDiffusionModel  else LitSampler
